@@ -1,4 +1,4 @@
-# wariff
+# walife
 
 **顧客データベースを持たないリワードバウチャー。**
 
@@ -39,11 +39,11 @@
 ## 使い方
 
 ```sh
-npm install wariff
+npm install walife
 ```
 
 ```ts
-import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'wariff';
+import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'walife';
 
 const programJson = await readFile('program.json', 'utf8');
 const program = parseProgram(programJson);
@@ -77,11 +77,11 @@ const { findings, statements } = await settle(program, programJson, [await baker
 ## コマンドライン
 
 ```sh
-wariff keygen > bakery.json                                # 鍵ペア(秘密に保管し、公開側をプログラムに載せる)
-wariff issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
-wariff present -k agent.json --aud cafe.example --nonce N voucher.txt
-wariff verify -p program.json --aud cafe.example --nonce N presentation.txt
-wariff settle -p program.json bakery-claim.json cafe-claim.json
+walife keygen > bakery.json                                # 鍵ペア(秘密に保管し、公開側をプログラムに載せる)
+walife issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
+walife present -k agent.json --aud cafe.example --nonce N voucher.txt
+walife verify -p program.json --aud cafe.example --nonce N presentation.txt
+walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
 ## 開発

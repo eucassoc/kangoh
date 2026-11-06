@@ -1,4 +1,4 @@
-# wariff
+# walife
 
 **Reward vouchers without a customer database.**
 
@@ -41,11 +41,11 @@ they issue with, the value of a voucher and how many days it is valid.
 ## Use
 
 ```sh
-npm install wariff
+npm install walife
 ```
 
 ```ts
-import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'wariff';
+import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'walife';
 
 const programJson = await readFile('program.json', 'utf8');
 const program = parseProgram(programJson);
@@ -81,11 +81,11 @@ append-only file or an evidence log with signed checkpoints plugs in.
 ## Command line
 
 ```sh
-wariff keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
-wariff issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
-wariff present -k agent.json --aud cafe.example --nonce N voucher.txt
-wariff verify -p program.json --aud cafe.example --nonce N presentation.txt
-wariff settle -p program.json bakery-claim.json cafe-claim.json
+walife keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
+walife issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
+walife present -k agent.json --aud cafe.example --nonce N voucher.txt
+walife verify -p program.json --aud cafe.example --nonce N presentation.txt
+walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
 ## Development

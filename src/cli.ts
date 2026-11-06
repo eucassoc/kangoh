@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// wariff: reward vouchers as verifiable credentials.
+// walife: reward vouchers as verifiable credentials.
 //
-//   wariff keygen                                   a key pair, as JSON
-//   wariff issue -p program.json -k store.json -h holder.json [--days N]
-//   wariff present -k holder.json --aud STORE --nonce N [voucher]
-//   wariff verify -p program.json --aud STORE [--nonce N] [presentation]
-//   wariff settle -p program.json claim.json...
+//   walife keygen                                   a key pair, as JSON
+//   walife issue -p program.json -k store.json -h holder.json [--days N]
+//   walife present -k holder.json --aud STORE --nonce N [voucher]
+//   walife verify -p program.json --aud STORE [--nonce N] [presentation]
+//   walife settle -p program.json claim.json...
 //
 // Documents are read from a file argument or standard input and written to
 // standard output, so that the commands compose with whatever a store or an
@@ -90,7 +90,7 @@ async function main(argv: string[]): Promise<number> {
       return findings.length ? 1 : 0;
     }
     default:
-      console.error('usage: wariff keygen | issue | present | verify | settle');
+      console.error('usage: walife keygen | issue | present | verify | settle');
       return 2;
   }
 }
