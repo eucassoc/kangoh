@@ -84,6 +84,24 @@ walife verify -p program.json --aud cafe.example --nonce N presentation.txt
 walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
+## エージェントのウォレット(MCPサーバー)
+
+`walife-mcp` は顧客のウォレットをMCPで提供し、買い物をするエージェント自身が
+バウチャーを持てるようにします。ウォレットは鍵とバウチャーを入れたファイル
+(`WALIFE_WALLET`、既定は `~/.walife/wallet.json`)で、店舗には一切見えません。
+
+```json
+{ "mcpServers": { "walife": { "command": "walife-mcp" } } }
+```
+
+| ツール | 内容 |
+|---|---|
+| `receiving_key` | 会計時に店舗へ渡す公開鍵。店舗はこの鍵にバウチャーを発行する |
+| `add_voucher` | 発行されたバウチャーを保管する。プログラムを渡せば検証してから保管する |
+| `list_vouchers` | 保有バウチャーの一覧(発行店、額面、期限) |
+| `present_voucher` | 店舗のチャレンジに対して提示に署名する |
+| `remove_voucher` | 店舗が受領した後にバウチャーを捨てる |
+
 ## 開発
 
 ```sh

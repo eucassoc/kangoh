@@ -23,8 +23,8 @@ export interface Fixture {
   stores: Store[];
 }
 
-export async function fixture(ids = ['bakery.example', 'cafe.example', 'bookshop.example'], opts: { acceptExpired?: string } = {}): Promise<Fixture> {
-  const clock = new Clock();
+export async function fixture(ids = ['bakery.example', 'cafe.example', 'bookshop.example'], opts: { acceptExpired?: string; start?: Date } = {}): Promise<Fixture> {
+  const clock = new Clock(opts.start);
   const keys = new Map<string, KeyPair>();
   for (const id of ids) keys.set(id, await generateKey());
   const program: Program = {

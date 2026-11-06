@@ -88,6 +88,25 @@ walife verify -p program.json --aud cafe.example --nonce N presentation.txt
 walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
+## The agent's wallet as an MCP server
+
+`walife-mcp` is the customer's wallet, served over MCP so that the agent that
+does the shopping holds the vouchers. The wallet is a file holding the key and
+the vouchers (`WALIFE_WALLET`, default `~/.walife/wallet.json`); no store
+ever sees it.
+
+```json
+{ "mcpServers": { "walife": { "command": "walife-mcp" } } }
+```
+
+| Tool | Does |
+|---|---|
+| `receiving_key` | The public key to give a store at checkout, so it can issue a voucher to this wallet |
+| `add_voucher` | Keep an issued voucher, verifying it against the program if given |
+| `list_vouchers` | The vouchers held, with issuer, value and expiry |
+| `present_voucher` | Sign a presentation to a store against its challenge |
+| `remove_voucher` | Drop a voucher once the store accepted it |
+
 ## Development
 
 ```sh

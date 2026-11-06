@@ -8,3 +8,5 @@ export { Store, type StoreOptions, type Redemption, type Claim } from './store.j
 export { Wallet, expiry, type Counter } from './wallet.js';
 export { settle, formatFinding, type Settlement, type Finding, type Statement } from './settlement.js';
 export { sha256 } from './digest.js';
+export { walletServer, describe, type Held } from './mcp.js';
+export { openWalletFile, saveWalletFile, walletPath, type WalletFile } from './walletFile.js';

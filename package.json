@@ -11,7 +11,8 @@
   "exports": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "bin": {
-    "walife": "dist/src/cli.js"
+    "walife": "dist/src/cli.js",
+    "walife-mcp": "dist/src/mcp.js"
   },
   "files": [
     "dist/src"
@@ -22,7 +23,9 @@
     "prepublishOnly": "npm test"
   },
   "dependencies": {
-    "jose": "^6.2.15"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "jose": "^6.2.15",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
