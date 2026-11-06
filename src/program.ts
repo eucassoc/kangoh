@@ -23,7 +23,7 @@ export interface Member {
   key: JWK;
 }
 
-export const DEFAULT_VCT = 'https://github.com/joeartsea/RaaS/voucher';
+export const DEFAULT_VCT = 'https://github.com/joeartsea/walife/voucher';
 
 export function vct(program: Program): string {
   return program.vct ?? DEFAULT_VCT;
