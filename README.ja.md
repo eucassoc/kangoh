@@ -84,15 +84,24 @@ walife verify -p program.json --aud cafe.example --nonce N presentation.txt
 walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
-## エージェントのウォレット(MCPサーバー)
+## MCPサーバー
 
-`walife-mcp` は顧客のウォレットをMCPで提供し、買い物をするエージェント自身が
-バウチャーを持てるようにします。ウォレットは鍵とバウチャーを入れたファイル
-(`WALIFE_WALLET`、既定は `~/.walife/wallet.json`)で、店舗には一切見えません。
+`walife-mcp` は三つの役割をそれぞれエージェントに提供します(1プロセスに1役割)。
+画面はなく、エージェントがインターフェイスです。
 
 ```json
-{ "mcpServers": { "walife": { "command": "walife-mcp" } } }
+{
+  "mcpServers": {
+    "walife": { "command": "walife-mcp" },
+    "walife-store": { "command": "walife-mcp", "args": ["store"], "env": { "WALIFE_STORE": "/path/to/store" } },
+    "walife-operator": { "command": "walife-mcp", "args": ["operator"] }
+  }
+}
 ```
+
+**ウォレット**(`walife-mcp`): 顧客のエージェントがバウチャーを持ちます。
+ウォレットは鍵とバウチャーを入れたファイル(`WALIFE_WALLET`、既定は
+`~/.walife/wallet.json`)で、店舗には一切見えません。
 
 | ツール | 内容 |
 |---|---|
@@ -101,6 +110,24 @@ walife settle -p program.json bakery-claim.json cafe-claim.json
 | `list_vouchers` | 保有バウチャーの一覧(発行店、額面、期限) |
 | `present_voucher` | 店舗のチャレンジに対して提示に署名する |
 | `remove_voucher` | 店舗が受領した後にバウチャーを捨てる |
+
+**店舗**(`walife-mcp store`): 店舗のディレクトリ(`WALIFE_STORE`)に
+`store.json`(`{"id", "privateJwk"}`)と公開されたままの `program.json` を置きます。
+サーバーが `records.jsonl` と `presentations.jsonl` をそこに書きます。
+このディレクトリが店舗の状態のすべてです。
+
+| ツール | 内容 |
+|---|---|
+| `issue_voucher` | 購入後、顧客の受取鍵にバウチャーを発行する |
+| `challenge` | 提示1回分のチャレンジ |
+| `redeem_voucher` | 提示を受領する。検証し、記録し、請求の根拠として保管する |
+| `claim` | 運営者に送る記録と提示内容 |
+
+**運営者**(`walife-mcp operator`): 状態を持ちません。
+
+| ツール | 内容 |
+|---|---|
+| `settle` | プログラムと各店舗の請求(JSONまたはファイルパス)から期間を精算する。店舗ごとの明細と、支払われない受領の指摘 |
 
 ## 開発
 

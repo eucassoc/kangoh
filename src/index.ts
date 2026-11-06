@@ -4,9 +4,10 @@ export { issueVoucher, verifyVoucher, splitVoucher, VOUCHER_TYP, type VoucherCla
 export { present, verifyPresentation, KB_TYP, type Presented, type KeyBinding } from './presentation.js';
 export { VoucherError, type VoucherErrorCode } from './errors.js';
 export { MemoryRecorder, JsonlRecorder, parseRecords, type Record, type Recorder, type EventName } from './record.js';
-export { Store, type StoreOptions, type Redemption, type Claim } from './store.js';
+export { Store, MemoryPresentations, type StoreOptions, type Redemption, type Claim, type PresentationStore } from './store.js';
+export { openStore, storeDir, JsonlPresentations } from './storeDir.js';
 export { Wallet, expiry, type Counter } from './wallet.js';
 export { settle, formatFinding, type Settlement, type Finding, type Statement } from './settlement.js';
 export { sha256 } from './digest.js';
-export { walletServer, describe, type Held } from './mcp.js';
+export { walletServer, storeServer, operatorServer, serverFor, describe, type Held } from './mcp.js';
 export { openWalletFile, saveWalletFile, walletPath, type WalletFile } from './walletFile.js';

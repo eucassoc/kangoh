@@ -88,16 +88,24 @@ walife verify -p program.json --aud cafe.example --nonce N presentation.txt
 walife settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
-## The agent's wallet as an MCP server
+## MCP servers
 
-`walife-mcp` is the customer's wallet, served over MCP so that the agent that
-does the shopping holds the vouchers. The wallet is a file holding the key and
-the vouchers (`WALIFE_WALLET`, default `~/.walife/wallet.json`); no store
-ever sees it.
+`walife-mcp` serves each of the three roles to an agent, one role per
+process. There is no screen; the agent is the interface.
 
 ```json
-{ "mcpServers": { "walife": { "command": "walife-mcp" } } }
+{
+  "mcpServers": {
+    "walife": { "command": "walife-mcp" },
+    "walife-store": { "command": "walife-mcp", "args": ["store"], "env": { "WALIFE_STORE": "/path/to/store" } },
+    "walife-operator": { "command": "walife-mcp", "args": ["operator"] }
+  }
+}
 ```
+
+**Wallet** (`walife-mcp`): the customer's agent holds the vouchers. The
+wallet is a file holding the key and the vouchers (`WALIFE_WALLET`, default
+`~/.walife/wallet.json`); no store ever sees it.
 
 | Tool | Does |
 |---|---|
@@ -106,6 +114,24 @@ ever sees it.
 | `list_vouchers` | The vouchers held, with issuer, value and expiry |
 | `present_voucher` | Sign a presentation to a store against its challenge |
 | `remove_voucher` | Drop a voucher once the store accepted it |
+
+**Store** (`walife-mcp store`): the store's directory (`WALIFE_STORE`) holds
+`store.json` (`{"id", "privateJwk"}`), `program.json` as published, and the
+store's `records.jsonl` and `presentations.jsonl`, which the server writes.
+The directory is the store's whole state.
+
+| Tool | Does |
+|---|---|
+| `issue_voucher` | Issue a voucher to a customer's receiving key after a purchase |
+| `challenge` | A challenge for one presentation |
+| `redeem_voucher` | Accept a presentation: verify, record, keep it as the claim |
+| `claim` | The records and presentations to send to the operator |
+
+**Operator** (`walife-mcp operator`): no state.
+
+| Tool | Does |
+|---|---|
+| `settle` | Settle a period from the program and the stores' claims, given as JSON or file paths: statements per store and findings for every redemption not paid |
 
 ## Development
 

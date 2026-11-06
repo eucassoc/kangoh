@@ -16,6 +16,24 @@ export interface StoreOptions {
   now?: () => Date;
   /** Accept vouchers after they expired. Settlement will not pay them. */
   acceptExpired?: boolean;
+  /** Where the presentations the store took are kept. In memory by default; a store keeps them on disk, as they are its claim. */
+  presentations?: PresentationStore;
+}
+
+/** Where a store keeps the presentations it took, by the digest in their record. */
+export interface PresentationStore {
+  put(digest: string, presentation: string): Promise<void>;
+  all(): Promise<{ [digest: string]: string }>;
+}
+
+export class MemoryPresentations implements PresentationStore {
+  private readonly map: { [digest: string]: string } = {};
+  async put(digest: string, presentation: string): Promise<void> {
+    this.map[digest] = presentation;
+  }
+  async all(): Promise<{ [digest: string]: string }> {
+    return { ...this.map };
+  }
 }
 
 export interface Redemption extends Presented {
@@ -46,9 +64,9 @@ export class Store {
   private readonly recorder: Recorder;
   private readonly now: () => Date;
   private readonly acceptExpired: boolean;
+  private readonly presentations: PresentationStore;
   private readonly challenges = new Set<string>();
-  private readonly taken = new Set<string>();
-  private readonly presentations: { [digest: string]: string } = {};
+  private taken: Set<string> | undefined;
 
   constructor(opts: StoreOptions) {
     this.id = opts.id;
@@ -58,6 +76,18 @@ export class Store {
     this.recorder = opts.recorder;
     this.now = opts.now ?? (() => new Date());
     this.acceptExpired = opts.acceptExpired ?? false;
+    this.presentations = opts.presentations ?? new MemoryPresentations();
+  }
+
+  /** The vouchers this store has taken, rebuilt from its records on first use. */
+  private async takenSet(): Promise<Set<string>> {
+    if (!this.taken) {
+      this.taken = new Set();
+      for (const r of await this.recorder.records()) {
+        if (r.event === 'redeemed' && r.meta?.voucher) this.taken.add(r.meta.voucher);
+      }
+    }
+    return this.taken;
   }
 
   /** Records the program. It must be the first record. */
@@ -91,8 +121,9 @@ export class Store {
     const p = await verifyPresentation(this.program, presentation, { aud: this.id, ...(this.acceptExpired ? {} : { at: now }) });
     if (!this.challenges.delete(p.kb.nonce)) throw new VoucherError('nonce', 'unknown or reused challenge');
     const voucherDigest = sha256(p.voucher);
-    if (this.taken.has(voucherDigest)) throw new VoucherError('nonce', 'already redeemed here');
-    this.taken.add(voucherDigest);
+    const taken = await this.takenSet();
+    if (taken.has(voucherDigest)) throw new VoucherError('nonce', 'already redeemed here');
+    taken.add(voucherDigest);
     const digest = sha256(presentation);
     const record = await this.recorder.append({
       at: now.toISOString(),
@@ -100,12 +131,12 @@ export class Store {
       digest,
       meta: { voucher: voucherDigest, issuer: p.claims.iss },
     });
-    this.presentations[digest] = presentation;
+    await this.presentations.put(digest, presentation);
     return { ...p, record, voucherDigest };
   }
 
   /** The store's claim for settlement. */
   async claim(): Promise<Claim> {
-    return { store: this.id, records: await this.recorder.records(), presentations: { ...this.presentations } };
+    return { store: this.id, records: await this.recorder.records(), presentations: await this.presentations.all() };
   }
 }

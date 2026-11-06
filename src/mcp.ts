@@ -1,17 +1,24 @@
 #!/usr/bin/env node
-// walife-mcp: the customer's wallet as an MCP server, so that the agent
-// that does the shopping holds the vouchers. Tools: receiving_key,
-// add_voucher, list_vouchers, present_voucher, remove_voucher.
+// walife-mcp: the three roles of a program as MCP servers, one per process.
 //
-// The wallet is a file (WALIFE_WALLET, default ~/.walife/wallet.json)
-// holding the agent's key and its vouchers; no store ever sees it.
+//   walife-mcp            the customer's wallet (WALIFE_WALLET, default
+//                         ~/.walife/wallet.json): the agent that does the
+//                         shopping holds the vouchers
+//   walife-mcp store      a store (WALIFE_STORE, its directory): issuing,
+//                         redeeming and the claim for settlement
+//   walife-mcp operator   the program operator: settlement from the
+//                         stores' claims
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { decodeJwt } from 'jose';
+import { readFile } from 'node:fs/promises';
+import { decodeJwt, type JWK } from 'jose';
 import { z } from 'zod';
 import { sha256 } from './digest.js';
 import { parseProgram } from './program.js';
 import { present } from './presentation.js';
+import { formatFinding, settle } from './settlement.js';
+import type { Claim } from './store.js';
+import { openStore, storeDir } from './storeDir.js';
 import { splitVoucher, verifyVoucher, type VoucherClaims } from './voucher.js';
 import { openWalletFile, saveWalletFile, walletPath, type WalletFile } from './walletFile.js';
 
@@ -164,11 +171,129 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
   return server;
 }
 
+const jwkSchema = z.record(z.string(), z.unknown());
+
+/** Builds the store server over a store directory. */
+export function storeServer(dir: string, now: () => Date = () => new Date()): McpServer {
+  const server = new McpServer({ name: 'walife-store', version: '0.1.0' });
+  const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
+  const store = openStore(dir, now);
+
+  server.registerTool(
+    'issue_voucher',
+    {
+      title: 'Issue a voucher',
+      description:
+        "Issue one voucher of the program's value to a customer's receiving key, after a purchase. The voucher is returned to hand to the customer; only its digest is recorded.",
+      inputSchema: { holder: jwkSchema.describe("The customer's receiving key (a public JWK)") },
+      outputSchema: { voucher: z.string(), ...heldSchema },
+    },
+    async ({ holder }) => {
+      const voucher = await (await store).issue(holder as JWK);
+      const out = { voucher, ...describe(voucher, now()) };
+      return { ...text(out), structuredContent: out };
+    },
+  );
+
+  server.registerTool(
+    'challenge',
+    {
+      title: 'Challenge',
+      description: 'A fresh challenge to give a customer who wants to present a voucher. Each challenge accepts one presentation.',
+      outputSchema: { store: z.string(), challenge: z.string() },
+    },
+    async () => {
+      const s = await store;
+      const out = { store: s.id, challenge: s.challenge() };
+      return { ...text(out), structuredContent: out };
+    },
+  );
+
+  server.registerTool(
+    'redeem_voucher',
+    {
+      title: 'Redeem a voucher',
+      description:
+        "Accept a presentation a customer handed over for one of this store's challenges. The issuer's and the holder's signatures, the challenge and the expiry are checked against the program; the presentation is recorded and kept as the claim on the issuer. Give the customer the discount only when this succeeds.",
+      inputSchema: { presentation: z.string() },
+      outputSchema: { issuer: z.string(), value: z.number(), voucher: z.string().describe('Digest of the voucher'), record: z.number().describe("Sequence number of this store's record") },
+    },
+    async ({ presentation }) => {
+      const r = await (await store).redeem(presentation.trim());
+      const out = { issuer: r.claims.iss, value: r.claims.value, voucher: r.voucherDigest, record: r.record.seq };
+      return { ...text(out), structuredContent: out };
+    },
+  );
+
+  server.registerTool(
+    'claim',
+    {
+      title: 'Claim for settlement',
+      description: "This store's claim for the settlement period: its records and the presentations it took, to send to the program operator.",
+      outputSchema: { store: z.string(), records: z.array(z.record(z.string(), z.unknown())), presentations: z.record(z.string(), z.string()) },
+    },
+    async () => {
+      const c = await (await store).claim();
+      return { ...text(c), structuredContent: { ...c } };
+    },
+  );
+
+  return server;
+}
+
+/** Builds the operator server, which keeps no state. */
+export function operatorServer(): McpServer {
+  const server = new McpServer({ name: 'walife-operator', version: '0.1.0' });
+  const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
+  const document = async (s: string) => (s.trimStart().startsWith('{') ? s : readFile(s, 'utf8'));
+
+  server.registerTool(
+    'settle',
+    {
+      title: 'Settle',
+      description:
+        "Settle a period from the stores' claims. Each voucher is paid once, to the first store that recorded it, in time order across all stores; every redemption that is not paid is a finding tied to the store's record. The program and each claim are given as JSON or as a path to a file.",
+      inputSchema: {
+        program: z.string().describe('The published program, as JSON or a file path'),
+        claims: z.array(z.string()).describe("The stores' claims, each as JSON or a file path"),
+      },
+      outputSchema: {
+        findings: z.array(z.object({ store: z.string(), seq: z.number(), at: z.string(), problem: z.string() })),
+        statements: z.array(z.object({ store: z.string(), issued: z.number(), accepted: z.number(), own: z.number(), receives: z.number(), pays: z.number() })),
+      },
+    },
+    async ({ program, claims }) => {
+      const programJson = await document(program);
+      const parsed: Claim[] = [];
+      for (const c of claims) parsed.push(JSON.parse(await document(c)) as Claim);
+      const out = await settle(parseProgram(programJson), programJson, parsed);
+      const lines = [...out.findings.map(formatFinding), JSON.stringify(out.statements, null, 2)];
+      return { ...text(lines.join('\n')), structuredContent: { ...out } };
+    },
+  );
+
+  return server;
+}
+
+/** The server for a role argument: wallet (default), store or operator. */
+export function serverFor(role: string | undefined, env: NodeJS.ProcessEnv = process.env): McpServer {
+  switch (role ?? 'wallet') {
+    case 'wallet':
+      return walletServer(walletPath(env));
+    case 'store':
+      return storeServer(storeDir(env));
+    case 'operator':
+      return operatorServer();
+    default:
+      throw new Error(`unknown role ${role}; use wallet, store or operator`);
+  }
+}
+
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  walletServer(walletPath())
-    .connect(new StdioServerTransport())
-    .catch((e: Error) => {
-      console.error(e.message);
-      process.exit(1);
-    });
+  try {
+    await serverFor(process.argv[2]).connect(new StdioServerTransport());
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exit(1);
+  }
 }
