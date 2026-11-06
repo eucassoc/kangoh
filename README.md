@@ -1,154 +1,100 @@
-# Substrate Smart Contracts - React App
+# wariff
 
-## Substrate Smart Contaracts
+**Reward vouchers without a customer database.**
 
-### Setup
+A store issues a voucher after a purchase: a signed credential of fixed value,
+bound to a key the customer's agent holds, valid for a limited time. Any store
+in the same program accepts it, checking only the issuer's signature, the
+holder's signature and the expiry against the published program. The
+redeeming store keeps the presentation as its claim on the issuer, and the
+program operator settles between stores from the stores' records. Nobody
+keeps a customer record, and there is no screen: the customer's side is a
+key and a wallet, which an AI agent holds anyway.
 
-Substrateスマートコントラクトの実行環境をコンピュータに構築します。<br>
-Substrate DeveloperHub ink! Smart Contracts Tutorial の[Setup](https://substrate.dev/substrate-contracts-workshop/#/0/setup) の手順に従います。
+[日本語](README.ja.md)
 
-### Buinding Contract
+## What a voucher is
 
-`smart-contacts`フォルダで次のコマンドを実行して、[スマートコントラクト](./smart-contacts)をコンパイルします。
+A voucher is an [SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/)
+with no selective disclosures: an Ed25519-signed JWT with `vct`, `iss`,
+`jti`, `iat`, `exp`, `cnf` (the holder's key), `program` and `value`,
+followed by `~`. A presentation adds a key binding JWT signed by the holder,
+naming the store (`aud`) and the store's challenge (`nonce`). A copied
+voucher is worthless without the holder's key, and a presentation cannot be
+replayed to another store.
 
-```
-cargo +nightly contract build
-```
+The program is a JSON document the operator publishes: the stores, the keys
+they issue with, the value of a voucher and how many days it is valid.
 
-コンパイルに成功すると`target`ファルダの下に`.wasm`ファイルが作成されます。
-
-また、次のコマンドを実行して、メタデータを作成します。
-
-```
-cargo +nightly contract generate-metadata
-```
-
-メタデータの作成に成功すると、`target`フォルダの下に`metadata.json`ファイルが作成されます。
-
-
-### Running a Canvas Node
-
-次のコマンドを実行してローカル開発チェーンを開始します。
-
-```
-canvas --dev --tmp
-```
-
-ターミナルでノードの実行が確認できたら、Canvas UIを使ってノードを操作します。
-
-https://paritytech.github.io/canvas-ui
-
-### Deploying Contract
-
-Canvas UIを使ってノードにコンパイルしたコントラクトコードをアップロード・デプロイします。<br>
-コードのアップロード・デプロイ手順は、Substrate DeveloperHub ink! Smart Contracts Tutorial の[Deploying Your Contract](https://substrate.dev/substrate-contracts-workshop/#/0/deploying-your-contract) を参考にします。
-
-## React App
-
-### Setup
-
-このアプリのインストール・実行は、[yarn](https://classic.yarnpkg.com/ja/docs/install) がインストールされていることが前提です。
-
-```
-git clone https://github.com/joeartsea/RaaS.git
-cd ./RaaS
-yarn install
+```json
+{
+  "name": "arcade.example",
+  "value": 100,
+  "validDays": 7,
+  "stores": [
+    { "id": "bakery.example", "key": { "kty": "OKP", "crv": "Ed25519", "x": "..." } },
+    { "id": "cafe.example", "key": { "kty": "OKP", "crv": "Ed25519", "x": "..." } }
+  ]
+}
 ```
 
-### Usage
+## Use
 
-次のコマンドを実行して、ローカルで実行しているノードに接続します。
-
-```
-yarn start
+```sh
+npm install wariff
 ```
 
-### Contract Setting
+```ts
+import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'wariff';
 
-画面下部`Contract`に次の項目を入力して`Save`ボタンをクリックしてください。
+const programJson = await readFile('program.json', 'utf8');
+const program = parseProgram(programJson);
 
-* __Address__ : コントラクトアドレス<br>初期入力されている値とCanvas UIのコントラクトアドレスが異なっている場合、`src/config.js`の`CONTRACT_ADDRESS`の値を書き換えてください。
-* __Name__ : 任意の名称
-* __Metadata File__ : `smart-contacts/target/metadata.json`
+// The store: its key, its program and an append-only record of what it did.
+const bakery = new Store({ id: 'bakery.example', privateJwk, program, programJson, recorder: new JsonlRecorder('bakery.jsonl') });
+await bakery.join();                                 // once, before anything else
 
-`Save contract to keyring completed.`のメッセージが表示されれば成功です。
+// After a purchase, the point of sale issues a voucher to the agent's key.
+const voucher = await bakery.issue(agentPublicJwk);  // the voucher goes to the agent; only its digest is recorded
 
-## Configuration
+// At another store, the agent presents it against a challenge.
+const wallet = new Wallet(agentPrivateJwk, agentPublicJwk);
+const presentation = await wallet.present(voucher, 'cafe.example', cafe.challenge());
+await cafe.redeem(presentation);                     // verifies, records, keeps the presentation
 
-ノードとReactアプリの連携にいくつかの変数を`src/config.js`に設定しています。
+// At the end of the period, the operator settles from the stores' claims.
+const { findings, statements } = await settle(program, programJson, [await bakery.claim(), await cafe.claim()]);
+```
 
-* __WS_PROVIDER_URL__ : 接続するローカルノードのエンドポイント
-* __CONTRACT_ADDRESS__ : ノードにアップロード・デプロイしたコントラクトアドレス
+`settle` pays each voucher once, to the first store that recorded it, in
+time order across all stores. Anything else is a finding tied to the store's
+record: a voucher presented at two stores, a voucher a store's key signed
+but the store never recorded issuing, a voucher redeemed after it expired,
+or a presentation that does not match the record of it.
 
-__Note :__ コントラクトアドレスは、Canvas UI の`Execute`ページで確認できます。
+A store keeps three things: its signing key, its records and the
+presentations it took. None of them identifies a customer. The records are
+what the store submits for settlement, so a store keeps them where they
+cannot be changed afterwards; the `Recorder` interface is where an
+append-only file or an evidence log with signed checkpoints plugs in.
 
-## Component
+## Command line
 
-### Contract Caller
+```sh
+wariff keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
+wariff issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
+wariff present -k agent.json --aud cafe.example --nonce N voucher.txt
+wariff verify -p program.json --aud cafe.example --nonce N presentation.txt
+wariff settle -p program.json bakery-claim.json cafe-claim.json
+```
 
-すべてのコントラクトを実行するユーザを選択します。
+## Development
 
-### ポイント発行
+```sh
+npm install
+npm test
+```
 
-`value`に入力したポイントを発行します。
+## License
 
-`Success`が表示されれば、成功です。
-
-### 権限付与
-
-`Store`に選択したユーザにポイント付与権限を与えます。
-
-`Success`が表示されれば、成功です。
-
-### ポイント付与
-
-`Store`に選択したユーザが`User`に選択したユーザに`Points`に入力したポイントを付与します。
-
-`Success`が表示されれば、成功です。
-
-__Note :__ 暫定的に「200円で1ポイント」の付与条件を設定しているため、`Amount`に入力した値 / 200 (小数点切り捨て)の値が`Points`に自動入力されるようになっています。`Points`に入力されている値が優先されます。
-
-### ポイント利用
-
-`Store`に選択したユーザで`User`に選択したユーザが`Points`に入力したポイントを利用します。
-
-`Success`が表示されれば、成功です。
-
-### オーナーポイント確認
-
-発行済ポイントが表示されます。
-
-### 店舗ポイント確認
-
-`Store`に選択したユーザが付与したポイント数が表示されます。
-
-### 店舗/ユーザポイント確認
-
-`Store`に選択したユーザが`User`に選択したユーザに付与したポイント数が表示されます。
-
-### ユーザポイント確認
-
-`User`に選択したユーザが保有するポイント数が表示されます。
-
-## Troubleshooting
-
-### Error Connecting to Substrate.
-
-`Error Connecting to Substrate.`のエラーメッセージが表示されたときは、ローカルノードが開始されているか確認してください。<br>
-実行されていない場合、ローカルノードを[開始](#running-a-canvas-node)してください。
-
-### No contracts available.
-
-`No contracts available.`のワーニングが表示されたときは、Canvas UIを使用してノードにコントラクトコードがアップロード・デプロイされているか確認してください。
-* ノードにアップロード・デプロイされていない場合<br>[Deploying Contract](#deploying-contract)を実施してください。
-* ノードにアップロード・デプロイされている場合<br>[Contract Setting](#contract-setting)を実施してください。
-
-### unknown
-
-各コンポーネントの`Call`ボタンをクリックしたときに`unknown`のエラーメッセージが表示された場合、次のことを実施してください。
-
-1. Canvas UI の`Execute`ページでデプロイしたコントラクトの`Forget`ボタンをクリックする。
-1. Canvas UI の`Deploy`ページでアップロードしたコントラクトの`Forget`ボタンをクリックする。
-1. [Deploying Contract](#deploying-contract)を再実施する。
-
-__Note :__ ローカルノードを再起動した場合に起こる現象のようです。<br>現時点では[Contract Setting](#contract-setting)を再実施する必要があるケースにはあたっていませんが、もしCanvas UIで上の3つを実施しても動作しない場合は[Contract Setting]も再実施してください。
+Apache-2.0

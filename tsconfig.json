@@ -1,26 +1,15 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "esnext",
-    "lib": [
-      "dom"
-    ],
-    "jsx": "react",
-    "moduleResolution": "node",
-    "allowJs": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "resolveJsonModule": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": [
-    "src"
-  ],
-  "exclude": [
-    "smart-contacts"
-  ]
+  "include": ["src", "test"]
 }

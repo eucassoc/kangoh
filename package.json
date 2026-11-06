@@ -1,53 +1,31 @@
 {
-  "name": "react-app",
+  "name": "wariff",
   "version": "0.1.0",
-  "private": true,
-  "dependencies": {
-    "@polkadot/api": "^4.11.2",
-    "@polkadot/api-contract": "^4.11.2",
-    "@polkadot/extension-dapp": "^0.34.1",
-    "@polkadot/keyring": "^6.5.1",
-    "@polkadot/types": "^4.17.1",
-    "@polkadot/ui-keyring": "^0.77.1",
-    "@polkadot/ui-settings": "^0.77.1",
-    "@testing-library/jest-dom": "^4.2.4",
-    "@testing-library/react": "^9.5.0",
-    "@testing-library/user-event": "^7.2.1",
-    "@types/jest": "^24.9.1",
-    "@types/node": "^12.19.3",
-    "@types/react": "^16.9.55",
-    "@types/react-dom": "^16.9.9",
-    "@types/react-router-dom": "^5.1.7",
-    "react": "^16.14.0",
-    "react-dom": "^16.14.0",
-    "react-dropzone": "^11.3.4",
-    "react-router": "^5.2.0",
-    "react-router-dom": "^5.2.0",
-    "react-scripts": "3.4.3",
-    "semantic-ui-css": "^2.4.1",
-    "semantic-ui-react": "^2.0.1",
-    "typescript": "^3.9.7",
-    "with": "^7.0.2"
+  "description": "Reward vouchers as verifiable credentials: issued by stores to customers' agents, accepted across a program and settled between stores, with no customer database.",
+  "license": "Apache-2.0",
+  "repository": "github:joeartsea/RaaS",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
   },
+  "exports": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "bin": {
+    "wariff": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src"
+  ],
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "build": "tsc",
+    "test": "tsc && node --test \"dist/test/**/*.test.js\"",
+    "prepublishOnly": "npm test"
   },
-  "eslintConfig": {
-    "extends": "react-app"
+  "dependencies": {
+    "jose": "^6.2.15"
   },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
   }
 }
