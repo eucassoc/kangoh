@@ -1,4 +1,5 @@
-# Publishes to npm when a version tag is pushed:
+# Publishes to npm when a version tag is pushed, or when run by hand from
+# the Actions tab (the version in package.json is published then):
 #
 #   npm version patch        # bumps package.json, commits, tags vX.Y.Z
 #   git push --follow-tags
@@ -11,6 +12,7 @@ name: publish
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,5 +31,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: the tag must match package.json
+        if: github.ref_type == 'tag'
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: npm publish --access public --provenance
