@@ -11,6 +11,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { readFile } from 'node:fs/promises';
+import { isMain } from './main.js';
 import { decodeJwt, type JWK } from 'jose';
 import { z } from 'zod';
 import { sha256 } from './digest.js';
@@ -289,7 +290,7 @@ export function serverFor(role: string | undefined, env: NodeJS.ProcessEnv = pro
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMain(import.meta.url)) {
   try {
     await serverFor(process.argv[2]).connect(new StdioServerTransport());
   } catch (e) {

@@ -57,3 +57,18 @@ async function call(client: Client, name: string, args: Record<string, unknown>)
   }
   return r.structuredContent as Record<string, unknown>;
 }
+
+test('the MCP server starts through a symlink, as npm installs a bin', async () => {
+  const { symlink, mkdtemp: mk } = await import('node:fs/promises');
+  const { resolve } = await import('node:path');
+  const dir = await mk(join(tmpdir(), 'kangoh-bin-'));
+  const link = join(dir, 'kangoh-mcp');
+  await symlink(resolve('dist/src/mcp.js'), link);
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(new StdioClientTransport({ command: link, env: { ...(process.env as Record<string, string>), KANGOH_WALLET: join(dir, 'wallet.json') } }));
+  try {
+    assert.ok((await client.listTools()).tools.length > 0);
+  } finally {
+    await client.close();
+  }
+});
