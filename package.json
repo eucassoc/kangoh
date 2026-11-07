@@ -1,9 +1,9 @@
 {
-  "name": "walife",
+  "name": "kangoh",
   "version": "0.1.0",
   "description": "Reward vouchers as verifiable credentials: issued by stores to customers' agents, accepted across a program and settled between stores, with no customer database.",
   "license": "Apache-2.0",
-  "repository": "github:joeartsea/walife",
+  "repository": "github:joeartsea/kangoh",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -11,8 +11,8 @@
   "exports": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "bin": {
-    "walife": "dist/src/cli.js",
-    "walife-mcp": "dist/src/mcp.js"
+    "kangoh": "dist/src/cli.js",
+    "kangoh-mcp": "dist/src/mcp.js"
   },
   "files": [
     "dist/src"

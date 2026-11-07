@@ -1,6 +1,12 @@
-# walife
+# kangoh
 
 **Reward vouchers without a customer database.**
+
+Kangoh (勘合, "kan-go") were the tallies of Japan's medieval trade with
+Ming China: a document split in two, one half held by each side, and a
+shipment honoured only when the halves met. A kangoh voucher works the
+same way: issued by one store, accepted by another, and settled when the
+records of both are matched.
 
 A store issues a voucher after a purchase: a signed credential of fixed value,
 bound to a key the customer's agent holds, valid for a limited time. Any store
@@ -41,11 +47,11 @@ they issue with, the value of a voucher and how many days it is valid.
 ## Use
 
 ```sh
-npm install walife
+npm install kangoh
 ```
 
 ```ts
-import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'walife';
+import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'kangoh';
 
 const programJson = await readFile('program.json', 'utf8');
 const program = parseProgram(programJson);
@@ -81,31 +87,31 @@ append-only file or an evidence log with signed checkpoints plugs in.
 ## Command line
 
 ```sh
-walife keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
-walife issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
-walife present -k agent.json --aud cafe.example --nonce N voucher.txt
-walife verify -p program.json --aud cafe.example --nonce N presentation.txt
-walife settle -p program.json bakery-claim.json cafe-claim.json
+kangoh keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
+kangoh issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
+kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
+kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
+kangoh settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
 ## MCP servers
 
-`walife-mcp` serves each of the three roles to an agent, one role per
+`kangoh-mcp` serves each of the three roles to an agent, one role per
 process. There is no screen; the agent is the interface.
 
 ```json
 {
   "mcpServers": {
-    "walife": { "command": "walife-mcp" },
-    "walife-store": { "command": "walife-mcp", "args": ["store"], "env": { "WALIFE_STORE": "/path/to/store" } },
-    "walife-operator": { "command": "walife-mcp", "args": ["operator"] }
+    "kangoh": { "command": "kangoh-mcp" },
+    "kangoh-store": { "command": "kangoh-mcp", "args": ["store"], "env": { "KANGOH_STORE": "/path/to/store" } },
+    "kangoh-operator": { "command": "kangoh-mcp", "args": ["operator"] }
   }
 }
 ```
 
-**Wallet** (`walife-mcp`): the customer's agent holds the vouchers. The
-wallet is a file holding the key and the vouchers (`WALIFE_WALLET`, default
-`~/.walife/wallet.json`); no store ever sees it.
+**Wallet** (`kangoh-mcp`): the customer's agent holds the vouchers. The
+wallet is a file holding the key and the vouchers (`KANGOH_WALLET`, default
+`~/.kangoh/wallet.json`); no store ever sees it.
 
 | Tool | Does |
 |---|---|
@@ -115,7 +121,7 @@ wallet is a file holding the key and the vouchers (`WALIFE_WALLET`, default
 | `present_voucher` | Sign a presentation to a store against its challenge |
 | `remove_voucher` | Drop a voucher once the store accepted it |
 
-**Store** (`walife-mcp store`): the store's directory (`WALIFE_STORE`) holds
+**Store** (`kangoh-mcp store`): the store's directory (`KANGOH_STORE`) holds
 `store.json` (`{"id", "privateJwk"}`), `program.json` as published, and the
 store's `records.jsonl` and `presentations.jsonl`, which the server writes.
 The directory is the store's whole state.
@@ -127,7 +133,7 @@ The directory is the store's whole state.
 | `redeem_voucher` | Accept a presentation: verify, record, keep it as the claim |
 | `claim` | The records and presentations to send to the operator |
 
-**Operator** (`walife-mcp operator`): no state.
+**Operator** (`kangoh-mcp operator`): no state.
 
 | Tool | Does |
 |---|---|

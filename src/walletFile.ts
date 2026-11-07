@@ -9,9 +9,9 @@ export interface WalletFile {
   vouchers: string[];
 }
 
-/** The wallet file: `WALIFE_WALLET`, or `~/.walife/wallet.json`. */
+/** The wallet file: `KANGOH_WALLET`, or `~/.kangoh/wallet.json`. */
 export function walletPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.WALIFE_WALLET ?? join(homedir(), '.walife', 'wallet.json');
+  return env.KANGOH_WALLET ?? join(homedir(), '.kangoh', 'wallet.json');
 }
 
 /** Reads the wallet file, creating it with a fresh key if it does not exist. */

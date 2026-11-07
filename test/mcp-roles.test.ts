@@ -23,7 +23,7 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 }
 
 test('a store issues and redeems, and the operator settles, through the MCP servers', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'walife-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kangoh-'));
   const keys = { bakery: await generateKey(), cafe: await generateKey() };
   const program: Program = {
     name: 'arcade.example',
@@ -47,9 +47,9 @@ test('a store issues and redeems, and the operator settles, through the MCP serv
     await writeFile(join(dirs[name], 'program.json'), JSON.stringify(program));
   }
 
-  const wallet = await start('wallet', { WALIFE_WALLET: join(dir, 'wallet.json') });
-  const bakery = await start('store', { WALIFE_STORE: dirs.bakery! });
-  const cafe = await start('store', { WALIFE_STORE: dirs.cafe! });
+  const wallet = await start('wallet', { KANGOH_WALLET: join(dir, 'wallet.json') });
+  const bakery = await start('store', { KANGOH_STORE: dirs.bakery! });
+  const cafe = await start('store', { KANGOH_STORE: dirs.cafe! });
   const operator = await start('operator', {});
   try {
     assert.deepEqual((await bakery.listTools()).tools.map((t) => t.name).sort(), ['challenge', 'claim', 'issue_voucher', 'redeem_voucher']);

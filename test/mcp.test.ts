@@ -11,10 +11,10 @@ import type { WalletFile } from '../src/walletFile.js';
 import { fixture } from './program.test.js';
 
 test('an agent holds, presents and removes vouchers through the MCP server', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'walife-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kangoh-'));
   const path = join(dir, 'wallet.json');
   const client = new Client({ name: 'test', version: '0' });
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: ['dist/src/mcp.js'], env: { ...process.env, WALIFE_WALLET: path } }));
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: ['dist/src/mcp.js'], env: { ...process.env, KANGOH_WALLET: path } }));
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(tools, ['add_voucher', 'list_vouchers', 'present_voucher', 'receiving_key', 'remove_voucher']);

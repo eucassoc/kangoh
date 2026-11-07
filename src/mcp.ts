@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// walife-mcp: the three roles of a program as MCP servers, one per process.
+// kangoh-mcp: the three roles of a program as MCP servers, one per process.
 //
-//   walife-mcp            the customer's wallet (WALIFE_WALLET, default
-//                         ~/.walife/wallet.json): the agent that does the
+//   kangoh-mcp            the customer's wallet (KANGOH_WALLET, default
+//                         ~/.kangoh/wallet.json): the agent that does the
 //                         shopping holds the vouchers
-//   walife-mcp store      a store (WALIFE_STORE, its directory): issuing,
+//   kangoh-mcp store      a store (KANGOH_STORE, its directory): issuing,
 //                         redeeming and the claim for settlement
-//   walife-mcp operator   the program operator: settlement from the
+//   kangoh-mcp operator   the program operator: settlement from the
 //                         stores' claims
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -56,7 +56,7 @@ const heldSchema = {
 
 /** Builds the wallet server over a wallet file. */
 export function walletServer(path: string, now: () => Date = () => new Date()): McpServer {
-  const server = new McpServer({ name: 'walife', version: '0.1.0' });
+  const server = new McpServer({ name: 'kangoh', version: '0.1.0' });
   const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
   const load = () => openWalletFile(path);
   const find = (w: WalletFile, digest: string) => {
@@ -175,7 +175,7 @@ const jwkSchema = z.record(z.string(), z.unknown());
 
 /** Builds the store server over a store directory. */
 export function storeServer(dir: string, now: () => Date = () => new Date()): McpServer {
-  const server = new McpServer({ name: 'walife-store', version: '0.1.0' });
+  const server = new McpServer({ name: 'kangoh-store', version: '0.1.0' });
   const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
   const store = openStore(dir, now);
 
@@ -243,7 +243,7 @@ export function storeServer(dir: string, now: () => Date = () => new Date()): Mc
 
 /** Builds the operator server, which keeps no state. */
 export function operatorServer(): McpServer {
-  const server = new McpServer({ name: 'walife-operator', version: '0.1.0' });
+  const server = new McpServer({ name: 'kangoh-operator', version: '0.1.0' });
   const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
   const document = async (s: string) => (s.trimStart().startsWith('{') ? s : readFile(s, 'utf8'));
 

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { JsonlRecorder, parseRecords } from '../src/record.js';
 
 test('records go to a JSON Lines file in sequence, and are read back', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'walife-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kangoh-'));
   const path = join(dir, 'records.jsonl');
   const r = new JsonlRecorder(path);
   assert.deepEqual(await r.records(), []);

@@ -9,11 +9,11 @@ import { Store, type PresentationStore } from './store.js';
  * A store's directory: `store.json` ({id, privateJwk}), `program.json` (the
  * program as published), `records.jsonl` (what the store did) and
  * `presentations.jsonl` (the vouchers it took, its claim). The directory is
- * `WALIFE_STORE`.
+ * `KANGOH_STORE`.
  */
 export function storeDir(env: NodeJS.ProcessEnv = process.env): string {
-  const d = env.WALIFE_STORE;
-  if (!d) throw new Error('WALIFE_STORE must name the store directory');
+  const d = env.KANGOH_STORE;
+  if (!d) throw new Error('KANGOH_STORE must name the store directory');
   return d;
 }
 

@@ -1,6 +1,11 @@
-# walife
+# kangoh
 
 **顧客データベースを持たないリワードバウチャー。**
+
+勘合(かんごう)は、日明貿易で使われた割符です。文書を二つに割って双方が
+片方ずつ持ち、突き合わせて一致したときだけ正規の取引と認めました。kangoh の
+バウチャーも同じで、ある店舗が発行し、別の店舗が受け取り、双方の記録を
+照合して精算されます。
 
 店舗は購入後にバウチャーを発行します。額面固定の署名付きクレデンシャルで、
 顧客のエージェントが持つ鍵に紐づき、有効期限があります。同じプログラムの
@@ -39,11 +44,11 @@
 ## 使い方
 
 ```sh
-npm install walife
+npm install kangoh
 ```
 
 ```ts
-import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'walife';
+import { generateKey, JsonlRecorder, parseProgram, Store, Wallet, settle } from 'kangoh';
 
 const programJson = await readFile('program.json', 'utf8');
 const program = parseProgram(programJson);
@@ -77,31 +82,31 @@ const { findings, statements } = await settle(program, programJson, [await baker
 ## コマンドライン
 
 ```sh
-walife keygen > bakery.json                                # 鍵ペア(秘密に保管し、公開側をプログラムに載せる)
-walife issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
-walife present -k agent.json --aud cafe.example --nonce N voucher.txt
-walife verify -p program.json --aud cafe.example --nonce N presentation.txt
-walife settle -p program.json bakery-claim.json cafe-claim.json
+kangoh keygen > bakery.json                                # 鍵ペア(秘密に保管し、公開側をプログラムに載せる)
+kangoh issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
+kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
+kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
+kangoh settle -p program.json bakery-claim.json cafe-claim.json
 ```
 
 ## MCPサーバー
 
-`walife-mcp` は三つの役割をそれぞれエージェントに提供します(1プロセスに1役割)。
+`kangoh-mcp` は三つの役割をそれぞれエージェントに提供します(1プロセスに1役割)。
 画面はなく、エージェントがインターフェイスです。
 
 ```json
 {
   "mcpServers": {
-    "walife": { "command": "walife-mcp" },
-    "walife-store": { "command": "walife-mcp", "args": ["store"], "env": { "WALIFE_STORE": "/path/to/store" } },
-    "walife-operator": { "command": "walife-mcp", "args": ["operator"] }
+    "kangoh": { "command": "kangoh-mcp" },
+    "kangoh-store": { "command": "kangoh-mcp", "args": ["store"], "env": { "KANGOH_STORE": "/path/to/store" } },
+    "kangoh-operator": { "command": "kangoh-mcp", "args": ["operator"] }
   }
 }
 ```
 
-**ウォレット**(`walife-mcp`): 顧客のエージェントがバウチャーを持ちます。
-ウォレットは鍵とバウチャーを入れたファイル(`WALIFE_WALLET`、既定は
-`~/.walife/wallet.json`)で、店舗には一切見えません。
+**ウォレット**(`kangoh-mcp`): 顧客のエージェントがバウチャーを持ちます。
+ウォレットは鍵とバウチャーを入れたファイル(`KANGOH_WALLET`、既定は
+`~/.kangoh/wallet.json`)で、店舗には一切見えません。
 
 | ツール | 内容 |
 |---|---|
@@ -111,7 +116,7 @@ walife settle -p program.json bakery-claim.json cafe-claim.json
 | `present_voucher` | 店舗のチャレンジに対して提示に署名する |
 | `remove_voucher` | 店舗が受領した後にバウチャーを捨てる |
 
-**店舗**(`walife-mcp store`): 店舗のディレクトリ(`WALIFE_STORE`)に
+**店舗**(`kangoh-mcp store`): 店舗のディレクトリ(`KANGOH_STORE`)に
 `store.json`(`{"id", "privateJwk"}`)と公開されたままの `program.json` を置きます。
 サーバーが `records.jsonl` と `presentations.jsonl` をそこに書きます。
 このディレクトリが店舗の状態のすべてです。
@@ -123,7 +128,7 @@ walife settle -p program.json bakery-claim.json cafe-claim.json
 | `redeem_voucher` | 提示を受領する。検証し、記録し、請求の根拠として保管する |
 | `claim` | 運営者に送る記録と提示内容 |
 
-**運営者**(`walife-mcp operator`): 状態を持ちません。
+**運営者**(`kangoh-mcp operator`): 状態を持ちません。
 
 | ツール | 内容 |
 |---|---|
