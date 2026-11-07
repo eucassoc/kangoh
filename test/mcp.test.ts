@@ -65,7 +65,7 @@ test('the MCP server starts through a symlink, as npm installs a bin', async () 
   const link = join(dir, 'kangoh-mcp');
   await symlink(resolve('dist/src/mcp.js'), link);
   const client = new Client({ name: 'test', version: '0' });
-  await client.connect(new StdioClientTransport({ command: link, env: { ...(process.env as Record<string, string>), KANGOH_WALLET: join(dir, 'wallet.json') } }));
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [link], env: { ...(process.env as Record<string, string>), KANGOH_WALLET: join(dir, 'wallet.json') } }));
   try {
     assert.ok((await client.listTools()).tools.length > 0);
   } finally {
