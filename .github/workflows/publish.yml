@@ -1,0 +1,33 @@
+# Publishes to npm when a version tag is pushed:
+#
+#   npm version patch        # bumps package.json, commits, tags vX.Y.Z
+#   git push --follow-tags
+#
+# No token: npm trusted publishing (OIDC) must be set up once for the
+# package on npmjs.com (Settings > Trusted Publisher > GitHub Actions,
+# with this repository and the workflow file name publish.yml).
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest # trusted publishing needs npm 11.5.1 or later
+      - run: npm ci
+      - run: npm test
+      - name: the tag must match package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm publish --access public --provenance
