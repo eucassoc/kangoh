@@ -48,6 +48,27 @@ how many days a voucher is valid.
 }
 ```
 
+## Why not a blockchain
+
+Kangoh grew out of RaaS, a shared reward program built on a blockchain. The
+aim is the same: shops issuing points to each other and settling without
+trusting any one company. With customers' points held by an AI agent or a
+phone wallet, a shared ledger is no longer needed for it:
+
+| | On a blockchain | kangoh |
+|---|---|---|
+| A point | A token on the chain | A VC signed by the shop, bound to the holder's key |
+| Double spend | Consensus, then finality | The operator's registry at the moment of use; settlement afterwards |
+| Rewrites | Consensus and a public ledger | The operator's records as a [deedlog](https://github.com/eucassoc/deedlog) trail, cosigned by witnesses (receipt claims now; registry, change and settlement next) |
+| Change | Out of the transaction | Issued by the operator, checked at settlement; the operator cannot create points |
+| Visibility | Every transaction public | None; only hashes and claim outcomes are published |
+| Fees, speed | Fees, waiting | None, instant |
+| The customer needs | A crypto wallet | An agent's wallet, or an app with a passkey |
+| Without the operator | Keeps running | Whole points still spend; double spends are found at settlement |
+
+What kangoh gives up is running with no operator at all. What it gains is
+speed, no fees and transactions nobody can see.
+
 ## Use
 
 ```sh
