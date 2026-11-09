@@ -6,6 +6,7 @@
 //   kangoh present -k holder.json --aud STORE --nonce N [voucher]
 //   kangoh verify -p program.json --aud STORE [--nonce N] [presentation]
 //   kangoh settle -p program.json claim.json...
+//   kangoh registry [--port 8788] [--file claims.jsonl] [--token SECRET]
 //
 // Documents are read from a file argument or standard input and written to
 // standard output, so that the commands compose with whatever a store or an
@@ -18,6 +19,7 @@ import { present, verifyPresentation } from './presentation.js';
 import { formatFinding, settle } from './settlement.js';
 import type { Claim } from './store.js';
 import { issueVoucher } from './voucher.js';
+import { Registry, registryServer } from './registry.js';
 
 async function read(path: string | undefined): Promise<string> {
   const buf = path && path !== '-' ? await readFile(path) : await readStdin();
@@ -89,8 +91,21 @@ async function main(argv: string[]): Promise<number> {
       console.log(JSON.stringify(statements, null, 2));
       return findings.length ? 1 : 0;
     }
+    case 'registry': {
+      const { values } = parseArgs({
+        args: rest,
+        options: { port: { type: 'string', default: '8788' }, file: { type: 'string', default: 'claims.jsonl' }, token: { type: 'string' } },
+      });
+      const registry = new Registry(values.file);
+      await registry.load();
+      const server = registryServer({ registry, ...(values.token ? { token: values.token } : {}) });
+      await new Promise<void>((resolve) => server.listen(Number(values.port), resolve));
+      console.error(`registry on port ${values.port}, ${registry.size} claims in ${values.file}`);
+      await new Promise(() => {});
+      return 0;
+    }
     default:
-      console.error('usage: kangoh keygen | issue | present | verify | settle');
+      console.error('usage: kangoh keygen | issue | present | verify | settle | registry');
       return 2;
   }
 }

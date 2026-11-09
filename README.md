@@ -78,6 +78,25 @@ record: a voucher presented at two stores, a voucher a store's key signed
 but the store never recorded issuing, a voucher redeemed after it expired,
 or a presentation that does not match the record of it.
 
+## Stopping a double use at the counter
+
+Without more, a voucher presented at two stores is found at settlement and
+paid once. With the operator's **registry**, the second store refuses it on
+the spot: before a store takes a voucher it asks the registry, which holds
+the digests of vouchers taken and the store that took each, and nothing
+about anyone.
+
+```sh
+kangoh registry --port 8788 --file claims.jsonl --token SECRET   # the operator runs this
+```
+
+A store names it in `store.json` (`"registry": {"url": "https://...", "token": "SECRET"}`)
+or in `StoreOptions.registry`. If the registry cannot be reached the store
+takes the voucher and leaves a double use to settlement; with
+`"required": true` it refuses instead. The registry is a convenience over
+the records, not a replacement: settlement still matches every store's
+ledger.
+
 A store keeps three things: its signing key, its records and the
 presentations it took. None of them identifies a customer. The records are
 what the store submits for settlement, so a store keeps them where they

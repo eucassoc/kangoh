@@ -3,13 +3,15 @@ import { join } from 'node:path';
 import type { JWK } from 'jose';
 import { parseProgram } from './program.js';
 import { JsonlRecorder } from './record.js';
+import type { RegistryClientOptions } from './registry.js';
 import { Store, type PresentationStore } from './store.js';
 
 /**
- * A store's directory: `store.json` ({id, privateJwk}), `program.json` (the
- * program as published), `records.jsonl` (what the store did) and
- * `presentations.jsonl` (the vouchers it took, its claim). The directory is
- * `KANGOH_STORE`.
+ * A store's directory: `store.json` ({id, privateJwk, registry?}),
+ * `program.json` (the program as published), `records.jsonl` (what the store
+ * did) and `presentations.jsonl` (the vouchers it took, its claim). The
+ * directory is `KANGOH_STORE`. `registry` is {url, token?, required?}: the
+ * operator's registry to ask before taking a voucher.
  */
 export function storeDir(env: NodeJS.ProcessEnv = process.env): string {
   const d = env.KANGOH_STORE;
@@ -45,7 +47,7 @@ export class JsonlPresentations implements PresentationStore {
 
 /** Opens a store from its directory, recording the program first if nothing is recorded yet. */
 export async function openStore(dir: string, now?: () => Date): Promise<Store> {
-  const { id, privateJwk } = JSON.parse(await readFile(join(dir, 'store.json'), 'utf8')) as { id: string; privateJwk: JWK };
+  const { id, privateJwk, registry } = JSON.parse(await readFile(join(dir, 'store.json'), 'utf8')) as { id: string; privateJwk: JWK; registry?: RegistryClientOptions };
   if (!id || !privateJwk) throw new Error(`${dir}/store.json needs id and privateJwk`);
   const programJson = await readFile(join(dir, 'program.json'), 'utf8');
   const program = parseProgram(programJson);
@@ -57,6 +59,7 @@ export async function openStore(dir: string, now?: () => Date): Promise<Store> {
     programJson,
     recorder,
     presentations: new JsonlPresentations(join(dir, 'presentations.jsonl')),
+    ...(registry ? { registry } : {}),
     ...(now ? { now } : {}),
   });
   if ((await recorder.records()).length === 0) await store.join();

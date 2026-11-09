@@ -5,6 +5,7 @@ import { verifyPresentation, type Presented } from './presentation.js';
 import type { Program } from './program.js';
 import type { Record, Recorder } from './record.js';
 import { issueVoucher } from './voucher.js';
+import { RegistryClient, type RegistryClientOptions } from './registry.js';
 
 export interface StoreOptions {
   id: string;
@@ -18,6 +19,8 @@ export interface StoreOptions {
   acceptExpired?: boolean;
   /** Where the presentations the store took are kept. In memory by default; a store keeps them on disk, as they are its claim. */
   presentations?: PresentationStore;
+  /** The operator's registry, asked before a voucher is taken whether another store has it. Without it, a double use is found at settlement. */
+  registry?: RegistryClientOptions;
 }
 
 /** Where a store keeps the presentations it took, by the digest in their record. */
@@ -65,6 +68,7 @@ export class Store {
   private readonly now: () => Date;
   private readonly acceptExpired: boolean;
   private readonly presentations: PresentationStore;
+  private readonly registry: RegistryClient | undefined;
   private readonly challenges = new Set<string>();
   private taken: Set<string> | undefined;
 
@@ -77,6 +81,7 @@ export class Store {
     this.now = opts.now ?? (() => new Date());
     this.acceptExpired = opts.acceptExpired ?? false;
     this.presentations = opts.presentations ?? new MemoryPresentations();
+    this.registry = opts.registry ? new RegistryClient(opts.registry) : undefined;
   }
 
   /** The vouchers this store has taken, rebuilt from its records on first use. */
@@ -112,9 +117,9 @@ export class Store {
 
   /**
    * Accepts a presentation and records it. The checks are the issuer's
-   * signature, the holder's signature, the challenge, the expiry, and that
-   * this store has not taken the voucher before. Whether another store has
-   * is found at settlement.
+   * signature, the holder's signature, the challenge, the expiry, that this
+   * store has not taken the voucher before and, with a registry, that no
+   * other store has either. Without a registry, that is found at settlement.
    */
   async redeem(presentation: string): Promise<Redemption> {
     const now = this.now();
@@ -122,7 +127,10 @@ export class Store {
     if (!this.challenges.delete(p.kb.nonce)) throw new VoucherError('nonce', 'unknown or reused challenge');
     const voucherDigest = sha256(p.voucher);
     const taken = await this.takenSet();
-    if (taken.has(voucherDigest)) throw new VoucherError('nonce', 'already redeemed here');
+    if (taken.has(voucherDigest)) throw new VoucherError('spent', 'already redeemed here');
+    // Ask the operator's registry before taking it, so that a voucher spent
+    // at another store is refused at the counter.
+    if (this.registry) await this.registry.claim(voucherDigest, this.id);
     taken.add(voucherDigest);
     const digest = sha256(presentation);
     const record = await this.recorder.append({

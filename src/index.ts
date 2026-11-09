@@ -11,3 +11,4 @@ export { settle, formatFinding, type Settlement, type Finding, type Statement } 
 export { sha256 } from './digest.js';
 export { walletServer, storeServer, operatorServer, serverFor, describe, type Held } from './mcp.js';
 export { openWalletFile, saveWalletFile, walletPath, type WalletFile } from './walletFile.js';
+export { Registry, RegistryClient, registryServer, type Claimed, type ClaimResult, type RegistryClientOptions, type RegistryServerOptions } from './registry.js';
