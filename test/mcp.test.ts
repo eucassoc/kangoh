@@ -17,7 +17,7 @@ test('an agent holds, presents and removes vouchers through the MCP server', asy
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ['dist/src/mcp.js'], env: { ...process.env, KANGOH_WALLET: path } }));
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(tools, ['add_voucher', 'list_vouchers', 'present_voucher', 'receiving_key', 'remove_voucher']);
+    assert.deepEqual(tools, ['add_voucher', 'check_claims', 'claim_receipt', 'list_vouchers', 'present_voucher', 'receiving_key', 'remove_voucher']);
 
     const f = await fixture(undefined, { start: new Date() }); // real time: the server uses the real clock
     const [bakery, cafe] = f.stores as [Store, Store];
@@ -42,7 +42,7 @@ test('an agent holds, presents and removes vouchers through the MCP server', asy
 
     // A voucher bound to another key is refused when a program is given.
     const other = await bakery.issue((await import('../src/keys.js').then((m) => m.generateKey())).publicJwk);
-    await assert.rejects(call(client, 'add_voucher', { voucher: other, program: f.programJson }), /another key/);
+    await assert.rejects(call(client, 'add_voucher', { voucher: other, program: f.programJson }), /does not hold/);
     await assert.rejects(call(client, 'present_voucher', { store: 'cafe.example', challenge: 'x' }), /no valid voucher/);
   } finally {
     await client.close();

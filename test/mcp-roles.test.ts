@@ -9,6 +9,9 @@ import type { JWK } from 'jose';
 import { generateKey } from '../src/keys.js';
 import type { Program } from '../src/program.js';
 import { openStore } from '../src/storeDir.js';
+import { ReceiptDesk } from '../src/desk.js';
+import { Registry, registryServer } from '../src/registry.js';
+import type { AddressInfo } from 'node:net';
 
 async function start(role: string, env: Record<string, string>): Promise<Client> {
   const client = new Client({ name: 'test', version: '0' });
@@ -52,7 +55,16 @@ test('a store issues and redeems, and the operator settles, through the MCP serv
   const cafe = await start('store', { KANGOH_STORE: dirs.cafe! });
   const operator = await start('operator', {});
   try {
-    assert.deepEqual((await bakery.listTools()).tools.map((t) => t.name).sort(), ['challenge', 'claim', 'issue_voucher', 'redeem_voucher']);
+    assert.deepEqual((await bakery.listTools()).tools.map((t) => t.name).sort(), [
+      'approve_receipts',
+      'challenge',
+      'claim',
+      'issue_voucher',
+      'receipts',
+      'redeem_voucher',
+      'reject_receipt',
+      'sync_receipts',
+    ]);
     assert.deepEqual((await operator.listTools()).tools.map((t) => t.name), ['settle']);
 
     // Checkout at the bakery: the agent gives its key, the bakery issues.
@@ -88,5 +100,73 @@ test('a store issues and redeems, and the operator settles, through the MCP serv
     ]);
   } finally {
     await Promise.all([wallet, bakery, cafe, operator].map((c) => c.close()));
+  }
+});
+
+test('receipts through the MCP servers: the agent claims, the store reviews and approves, the agent collects', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kangoh-'));
+  const keys = { bakery: await generateKey(), cafe: await generateKey() };
+  const program: Program = {
+    name: 'arcade.example',
+    earn: { per: 100, points: 1 },
+    validDays: 90,
+    stores: [
+      { id: 'bakery.example', key: keys.bakery.publicJwk },
+      { id: 'cafe.example', key: keys.cafe.publicJwk, receipts: 'signed' },
+    ],
+  };
+  const desk = new ReceiptDesk({ program, secret: 's' });
+  const server = registryServer({ registry: new Registry(), desk });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  program.service = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const dirs: Record<string, string> = {};
+  for (const [name, id] of [
+    ['bakery', 'bakery.example'],
+    ['cafe', 'cafe.example'],
+  ] as const) {
+    dirs[name] = join(dir, name);
+    await (await import('node:fs/promises')).mkdir(dirs[name]);
+    await writeFile(join(dirs[name], 'store.json'), JSON.stringify({ id, privateJwk: keys[name].privateJwk }));
+    await writeFile(join(dirs[name], 'program.json'), JSON.stringify(program));
+  }
+  const wallet = await start('wallet', { KANGOH_WALLET: join(dir, 'wallet.json') });
+  const bakery = await start('store', { KANGOH_STORE: dirs.bakery! });
+  const cafe = await start('store', { KANGOH_STORE: dirs.cafe! });
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const printed = { store: 'bakery.example', at: `${today}T08:15`, number: '0042', total: 1280, program: JSON.stringify(program) };
+    const c = await call(wallet, 'claim_receipt', printed);
+    assert.equal(c.status, 'pending');
+    assert.equal(c.value, 12);
+    const dup = await call(wallet, 'claim_receipt', printed);
+    assert.equal(dup.status, 'duplicate');
+    assert.deepEqual(((await call(wallet, 'check_claims')).claims as { status: string }[]).map((x) => x.status), ['pending']);
+
+    const listed = (await call(bakery, 'receipts')).claims as { status: string }[];
+    assert.deepEqual(listed.map((x) => x.status), ['duplicate', 'pending']);
+    const approved = (await call(bakery, 'approve_receipts')).results as { status: string; value: number }[];
+    assert.deepEqual(approved.map((x) => [x.status, x.value]), [['issued', 12]]);
+
+    // The café's receipt carries its signed QR: no review, issued at its next sync.
+    const qrStore = await openStore(dirs.cafe!);
+    const { receiptQr } = await import('../src/receipt.js');
+    const qr = receiptQr(program, await qrStore.signReceipt({ at: `${today}T09:00`, number: '7', total: 500 }));
+    assert.equal((await call(wallet, 'claim_receipt', { qr })).status, 'authorized');
+    assert.deepEqual(((await call(cafe, 'sync_receipts')).results as { value: number }[]).map((x) => x.value), [5]);
+
+    const checked = (await call(wallet, 'check_claims')).claims as { status: string; value: number }[];
+    assert.deepEqual(checked.map((x) => [x.status, x.value]).sort(), [['issued', 12], ['issued', 5]].sort());
+    const held = await call(wallet, 'list_vouchers');
+    assert.equal(held.total, 17);
+
+    // Spent at the café with the key the bakery's voucher is bound to.
+    const ch = await call(cafe, 'challenge');
+    const bakeryVoucher = (held.vouchers as { issuer: string; digest: string }[]).find((v) => v.issuer === 'bakery.example') as { digest: string };
+    const p = await call(wallet, 'present_voucher', { store: ch.store, challenge: ch.challenge, digest: bakeryVoucher.digest });
+    const r = await call(cafe, 'redeem_voucher', { presentation: p.presentation });
+    assert.equal(r.value, 12);
+  } finally {
+    await Promise.all([wallet.close(), bakery.close(), cafe.close()]);
+    await new Promise<void>((r) => server.close(() => r()));
   }
 });

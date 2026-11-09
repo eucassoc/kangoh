@@ -30,8 +30,13 @@ export interface Issuer {
   privateJwk: JWK;
 }
 
-/** Issues a voucher of the program's value to a holder's key. */
-export async function issueVoucher(program: Program, issuer: Issuer, holder: JWK, now: Date = new Date()): Promise<string> {
+/**
+ * Issues a voucher to a holder's key: of the program's value, or of `value`
+ * when the program earns points from receipts.
+ */
+export async function issueVoucher(program: Program, issuer: Issuer, holder: JWK, now: Date = new Date(), value: number | undefined = program.value): Promise<string> {
+  if (value === undefined) throw new VoucherError('program', 'the program has no fixed value; give the value');
+  if (!validValue(program, value)) throw new VoucherError('program', `a voucher of ${value} does not fit the program`);
   const m = member(program, issuer.id);
   if (!m) throw new VoucherError('issuer', `${issuer.id} is not in the program`);
   const pub = toPublic(issuer.privateJwk);
@@ -43,7 +48,7 @@ export async function issueVoucher(program: Program, issuer: Issuer, holder: JWK
     jti: randomId(),
     cnf: { jwk: toPublic(holder) },
     program: program.name,
-    value: program.value,
+    value,
   };
   const jwt = await new SignJWT({ ...claims })
     .setProtectedHeader({ alg: ALG, typ: VOUCHER_TYP, ...(issuer.privateJwk.kid ? { kid: issuer.privateJwk.kid } : {}) })
@@ -89,7 +94,7 @@ export async function verifyVoucher(program: Program, s: string, opts: { at?: Da
   } catch {
     throw new VoucherError('issuer', `the signature is not ${claims.iss}'s`);
   }
-  if (claims.vct !== vct(program) || claims.program !== program.name || claims.value !== program.value) {
+  if (claims.vct !== vct(program) || claims.program !== program.name || !validValue(program, claims.value)) {
     throw new VoucherError('program', 'the voucher does not match the program');
   }
   if (typeof claims.jti !== 'string' || typeof claims.iat !== 'number' || typeof claims.exp !== 'number' || typeof claims.cnf?.jwk !== 'object') {
@@ -99,4 +104,14 @@ export async function verifyVoucher(program: Program, s: string, opts: { at?: Da
     throw new VoucherError('expired', `expired at ${new Date(claims.exp * 1000).toISOString()}`);
   }
   return claims as VoucherClaims;
+}
+
+/**
+ * Whether a voucher may carry `value`: the program's fixed value, or, when
+ * the program earns points from receipts, any positive integer. The store
+ * that signs a voucher pays it, so the program does not cap it.
+ */
+export function validValue(program: Program, value: unknown): value is number {
+  if (!Number.isInteger(value) || (value as number) <= 0) return false;
+  return program.earn !== undefined || value === program.value;
 }

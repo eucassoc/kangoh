@@ -6,6 +6,7 @@ import type { Program } from './program.js';
 import type { Record, Recorder } from './record.js';
 import { issueVoucher } from './voucher.js';
 import { RegistryClient, type RegistryClientOptions } from './registry.js';
+import { signReceipt, storeToken, type Receipt } from './receipt.js';
 
 export interface StoreOptions {
   id: string;
@@ -101,11 +102,31 @@ export class Store {
     return this.recorder.append({ at: this.now().toISOString(), event: 'program', digest: sha256(this.programJson) });
   }
 
-  /** Issues a voucher to a holder's key and records its digest. The voucher goes to the holder. */
-  async issue(holder: JWK): Promise<string> {
-    const v = await issueVoucher(this.program, { id: this.id, privateJwk: this.privateJwk }, holder, this.now());
-    await this.recorder.append({ at: this.now().toISOString(), event: 'issued', digest: sha256(v) });
+  /**
+   * Issues a voucher to a holder's key and records its digest. The voucher
+   * goes to the holder. `value` is for programs that earn points from
+   * receipts; `meta` is recorded with it, such as the receipt claim it
+   * answers.
+   */
+  async issue(holder: JWK, opts: { value?: number; meta?: { [key: string]: string } } = {}): Promise<string> {
+    const v = await issueVoucher(this.program, { id: this.id, privateJwk: this.privateJwk }, holder, this.now(), opts.value ?? this.program.value);
+    await this.recorder.append({ at: this.now().toISOString(), event: 'issued', digest: sha256(v), ...(opts.meta ? { meta: opts.meta } : {}) });
     return v;
+  }
+
+  /** The program the store is in. */
+  get programOf(): Program {
+    return this.program;
+  }
+
+  /** A short-lived token, signed with the store's key, for reading and answering its receipt claims at the operator's service. */
+  serviceToken(): Promise<string> {
+    return storeToken(this.id, this.privateJwk, this.now());
+  }
+
+  /** Signs the QR the point of sale prints on a receipt. */
+  signReceipt(receipt: Omit<Receipt, 'store'>, value?: number): Promise<string> {
+    return signReceipt(this.program, { id: this.id, privateJwk: this.privateJwk }, receipt, { now: this.now(), ...(value !== undefined ? { value } : {}) });
   }
 
   /** A challenge for one presentation. */

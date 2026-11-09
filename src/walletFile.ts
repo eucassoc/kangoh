@@ -3,10 +3,33 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { generateKey, type KeyPair } from './keys.js';
 
-/** What the agent keeps on disk: its key and its vouchers. Nothing else. */
+/** What the agent keeps on disk: its keys, its vouchers and the receipt claims it is waiting on. Nothing else. */
 export interface WalletFile {
+  /** The receiving key a store issues to at the counter. */
   key: KeyPair;
   vouchers: string[];
+  /** A fresh key per receipt claim, so that no two claims can be linked. */
+  keys?: KeyPair[];
+  /** Receipt claims waiting for the store. */
+  pending?: PendingClaim[];
+}
+
+export interface PendingClaim {
+  id: string;
+  /** The operator's service the claim was made at. */
+  service: string;
+  store: string;
+  /** The receipt as claimed, so the customer can tell claims apart. */
+  receipt: { at: string; number: string; total: number };
+  value: number;
+  submitted: string;
+  /** kid of the key the voucher will be bound to. */
+  kid: string;
+}
+
+/** The key a voucher is bound to, among the wallet's keys. */
+export function keyFor(w: WalletFile, x: string | undefined): KeyPair | undefined {
+  return [w.key, ...(w.keys ?? [])].find((k) => k.publicJwk.x === x);
 }
 
 /** The wallet file: `KANGOH_WALLET`, or `~/.kangoh/wallet.json`. */

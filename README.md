@@ -8,8 +8,11 @@ shipment honoured only when the halves met. A kangoh voucher works the
 same way: issued by one store, accepted by another, and settled when the
 records of both are matched.
 
-A store issues a voucher after a purchase: a signed credential of fixed value,
-bound to a key the customer's agent holds, valid for a limited time. Any store
+A store issues a voucher after a purchase: a signed credential, bound to a
+key the customer's wallet holds, valid for a limited time. The value is fixed,
+or follows the receipt: the customer's app reads the receipt, and the store
+confirms the day's claims against its sales and signs them, or approved them
+in advance with a QR it printed on the receipt. Any store
 in the same program accepts it, checking only the issuer's signature, the
 holder's signature and the expiry against the published program. The
 redeeming store keeps the presentation as its claim on the issuer, and the
@@ -30,7 +33,8 @@ voucher is worthless without the holder's key, and a presentation cannot be
 replayed to another store.
 
 The program is a JSON document the operator publishes: the stores, the keys
-they issue with, the value of a voucher and how many days it is valid.
+they issue with, the value of a voucher or the points a receipt earns, and
+how many days a voucher is valid.
 
 ```json
 {
@@ -103,6 +107,70 @@ what the store submits for settlement, so a store keeps them where they
 cannot be changed afterwards; the `Recorder` interface is where an
 append-only file or an evidence log with signed checkpoints plugs in.
 
+## Points from receipts
+
+Most shops have no way to hand a credential over at the till, but every shop
+prints a receipt. With `earn` in the program, the receipt is the evidence of
+the purchase and the store still signs the voucher:
+
+```json
+{
+  "name": "arcade.example",
+  "earn": { "per": 100, "points": 1, "max": 500 },
+  "validDays": 180,
+  "receiptDays": 7,
+  "service": "https://points.arcade.example",
+  "stores": [
+    { "id": "bakery.example", "key": { "...": "..." } },
+    { "id": "cafe.example", "key": { "...": "..." }, "receipts": "signed" }
+  ]
+}
+```
+
+1. **The customer claims.** The app reads the receipt (store, time, number,
+   total) and leaves a claim at the operator's receipt desk with a fresh key,
+   so that no two claims can be linked. A receipt is claimed once: the first
+   claim for a store, day and number wins, and a later one is refused as a
+   duplicate on the spot.
+2. **The store reviews once a day.** It lists the day's claims, duplicates
+   first as errors, compares the rest with its sales, and approves: each
+   voucher is signed with the store's key to the claim's key and recorded,
+   as at the counter. It can correct a misread total, or refuse with a
+   reason the customer sees.
+3. **Or nothing to review.** A store whose point of sale prints a signed QR
+   on each receipt (`"receipts": "signed"`) approved the voucher when it
+   printed it. Claims made with the QR are issued at the store's next sync,
+   and claims typed from its receipts are refused.
+4. **The customer collects** the voucher from the desk, and spends it at any
+   store in the program as before. Settlement is unchanged and pays by value.
+
+The store that signs a voucher pays it, so a store gains nothing by
+approving claims that are not its sales. A customer whose claim was refused
+as a duplicate but who has the receipt goes to the store, which issues at
+the counter (`issue_voucher` with a value).
+
+The desk runs in the operator's service, beside the registry:
+
+```sh
+KANGOH_DESK_SECRET=... kangoh registry --program program.json --state receipts.jsonl --chain receipts.chain.jsonl
+```
+
+It signs nothing and keeps nothing about anyone: receipts, the claims' keys
+and vouchers until collected, in `receipts.jsonl`. Every outcome (claimed,
+refused as a duplicate, issued, rejected) is appended to `receipts.chain.jsonl`,
+a [deedlog](https://github.com/eucassoc/deedlog) chain that names the claim,
+the store and an HMAC of the receipt, and no totals, numbers or keys, so that
+it can be published. Checkpoint, cosign and serve it with `dlog`; a customer
+can then check that the refusal of their claim is on the public record and
+has not been changed.
+
+| Endpoint | Who | Does |
+|---|---|---|
+| `POST /receipts` | the app | Claim a receipt (`{receipt, holder}` or `{token, holder}`): 201, 409 for a duplicate, 422 refused |
+| `GET /receipts/ID` | the app | The claim, with the voucher once issued |
+| `GET /receipts?from=DATE` | the store | Its claims; `Authorization: Store <token>` signed with its key |
+| `POST /receipts/ID/issue`, `/reject` | the store | Hand over the voucher, or refuse with a reason |
+
 ## Command line
 
 ```sh
@@ -111,6 +179,13 @@ kangoh issue -p program.json -k bakery.json -h agent.json  # a voucher, to stand
 kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
 kangoh settle -p program.json bakery-claim.json cafe-claim.json
+
+# Receipts (the store's directory is KANGOH_STORE)
+kangoh receipt-qr -p program.json -k cafe.json --number 0007 --total 640   # what the point of sale prints
+kangoh receipts                                            # the day's claims: duplicates as errors, then those waiting
+kangoh receipts approve                                    # approve all waiting; or IDs, with --total ID=880 to correct
+kangoh receipts reject ID --reason "no such receipt number"
+kangoh receipts sync                                       # issue the claims made with the store's signed QR
 ```
 
 ## MCP servers
@@ -135,6 +210,8 @@ wallet is a file holding the key and the vouchers (`KANGOH_WALLET`, default
 | Tool | Does |
 |---|---|
 | `receiving_key` | The public key to give a store at checkout, so it can issue a voucher to this wallet |
+| `claim_receipt` | Claim points with a receipt: its QR, or the store, time, number and total as printed |
+| `check_claims` | Collect the vouchers stores have issued for the claims, and the reasons for refusals |
 | `add_voucher` | Keep an issued voucher, verifying it against the program if given |
 | `list_vouchers` | The vouchers held, with issuer, value and expiry |
 | `present_voucher` | Sign a presentation to a store against its challenge |
@@ -147,10 +224,14 @@ The directory is the store's whole state.
 
 | Tool | Does |
 |---|---|
-| `issue_voucher` | Issue a voucher to a customer's receiving key after a purchase |
+| `issue_voucher` | Issue a voucher to a customer's receiving key at the counter, of a given value in a receipt program |
 | `challenge` | A challenge for one presentation |
 | `redeem_voucher` | Accept a presentation: verify, record, keep it as the claim |
 | `claim` | The records and presentations to send to the operator |
+| `receipts` | The day's receipt claims: refused duplicates first, then those waiting for review |
+| `approve_receipts` | Sign vouchers for claims that match the sales, correcting totals if needed |
+| `reject_receipt` | Refuse a claim with a reason the customer sees |
+| `sync_receipts` | Issue the claims made with the store's signed receipt QR, without review |
 
 **Operator** (`kangoh-mcp operator`): no state.
 

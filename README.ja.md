@@ -7,8 +7,10 @@
 バウチャーも同じで、ある店舗が発行し、別の店舗が受け取り、双方の記録を
 照合して精算されます。
 
-店舗は購入後にバウチャーを発行します。額面固定の署名付きクレデンシャルで、
-顧客のエージェントが持つ鍵に紐づき、有効期限があります。同じプログラムの
+店舗は購入後にバウチャーを発行します。署名付きクレデンシャルで、顧客の
+ウォレットが持つ鍵に紐づき、有効期限があります。額面は固定か、レシートに
+応じて決まります。顧客のアプリがレシートを読み取り、店舗は1日分の申請を
+売上と照らして署名するか、レシートに印字したQRで事前に承認しておきます。同じプログラムの
 どの店舗でも受け取れて、確認するのは公開されたプログラムに照らした発行者の
 署名、保持者の署名、有効期限だけです。受け取った店舗は提示されたバウチャーを
 発行店への請求の根拠として保管し、運営者は各店舗の記録から店舗間を精算します。
@@ -96,6 +98,65 @@ kangoh registry --port 8788 --file claims.jsonl --token SECRET   # 運営者が�
 置きます。追記専用ファイルや、署名付きチェックポイントを持つ証跡ログは
 `Recorder` インターフェイスで差し込めます。
 
+## レシートからポイントを発行する
+
+多くの店舗にはレジでクレデンシャルを手渡す手段がありませんが、レシートは
+どの店舗でも出ます。プログラムに `earn` を書くと、レシートを購入の証拠にし、
+署名は変わらず店舗が行います。
+
+```json
+{
+  "name": "arcade.example",
+  "earn": { "per": 100, "points": 1, "max": 500 },
+  "validDays": 180,
+  "receiptDays": 7,
+  "service": "https://points.arcade.example",
+  "stores": [
+    { "id": "bakery.example", "key": { "...": "..." } },
+    { "id": "cafe.example", "key": { "...": "..." }, "receipts": "signed" }
+  ]
+}
+```
+
+1. **顧客が申請する。** アプリがレシート(店舗、日時、番号、合計)を読み取り、
+   申請ごとに新しい鍵を添えて運営者のレシート窓口に申請します。申請どうしは
+   結び付けられません。レシートは一度しか使えず、同じ店舗、同じ日、同じ番号の
+   申請は先着が有効で、後からのものはその場で重複として断られます。
+2. **店舗が1日1回まとめて確認する。** その日の申請を一覧し(重複は先頭に
+   エラー行として出ます)、残りを売上と照らして承認します。承認すると店舗の鍵で
+   申請の鍵あてにバウチャーが署名され、レジでの発行と同じく記録されます。
+   読み取り違いの金額は訂正でき、断るときは顧客に見える理由を付けます。
+3. **確認が要らない店舗。** レシートに署名付きQRを印字できる店舗
+   (`"receipts": "signed"`)は、印字した時点で承認しています。QRでの申請は
+   店舗の次の同期で発行され、その店舗のレシートを手入力した申請は断られます。
+4. **顧客がポイントを受け取り**、これまでどおりプログラム内のどの店舗でも
+   使います。精算は変わらず、額面で支払われます。
+
+バウチャーに署名した店舗がその分を支払うので、自店の売上でない申請を承認しても
+店舗は得をしません。重複として断られた顧客が本物のレシートを持っていれば、
+店舗に持ち込み、店舗が窓口で発行します(`issue_voucher` に額面を指定)。
+
+窓口は運営者のサービスの中で、照合サービスと並んで動きます。
+
+```sh
+KANGOH_DESK_SECRET=... kangoh registry --program program.json --state receipts.jsonl --chain receipts.chain.jsonl
+```
+
+窓口は何にも署名せず、誰の情報も持ちません。`receipts.jsonl` にあるのは
+レシート、申請の鍵、受け取られるまでのバウチャーだけです。申請の結果(受付、
+重複による拒否、発行、却下)はすべて `receipts.chain.jsonl` に追記されます。
+これは [deedlog](https://github.com/eucassoc/deedlog) のチェーンで、申請、店舗、
+レシートの HMAC だけを持ち、金額、番号、鍵を含まないので公開できます。
+`dlog` でチェックポイントを作り、副署をもらって公開すれば、顧客は自分の申請が
+断られたことが公開記録にあり、後から書き換えられていないことを確かめられます。
+
+| エンドポイント | 呼ぶ側 | 内容 |
+|---|---|---|
+| `POST /receipts` | アプリ | レシートを申請する(`{receipt, holder}` か `{token, holder}`)。201、重複は409、受付不可は422 |
+| `GET /receipts/ID` | アプリ | 申請の状態。発行後はバウチャー |
+| `GET /receipts?from=DATE` | 店舗 | 自店の申請。店舗の鍵で署名した `Authorization: Store <token>` |
+| `POST /receipts/ID/issue`、`/reject` | 店舗 | バウチャーを渡す、または理由を付けて断る |
+
 ## コマンドライン
 
 ```sh
@@ -104,6 +165,13 @@ kangoh issue -p program.json -k bakery.json -h agent.json  # バウチャーを�
 kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
 kangoh settle -p program.json bakery-claim.json cafe-claim.json
+
+# レシート(店舗のディレクトリは KANGOH_STORE)
+kangoh receipt-qr -p program.json -k cafe.json --number 0007 --total 640   # レジがレシートに印字するQR
+kangoh receipts                                            # その日の申請。重複をエラーとして先頭に、続いて確認待ち
+kangoh receipts approve                                    # 確認待ちをすべて承認。IDを指定し --total ID=880 で金額を訂正
+kangoh receipts reject ID --reason "該当するレシート番号がありません"
+kangoh receipts sync                                       # 署名付きQRで申請された分を発行する
 ```
 
 ## MCPサーバー
@@ -128,6 +196,8 @@ kangoh settle -p program.json bakery-claim.json cafe-claim.json
 | ツール | 内容 |
 |---|---|
 | `receiving_key` | 会計時に店舗へ渡す公開鍵。店舗はこの鍵にバウチャーを発行する |
+| `claim_receipt` | レシートでポイントを申請する。QR、または印字された店舗、日時、番号、合計 |
+| `check_claims` | 店舗が発行したバウチャーを受け取る。断られた申請は理由とともに返す |
 | `add_voucher` | 発行されたバウチャーを保管する。プログラムを渡せば検証してから保管する |
 | `list_vouchers` | 保有バウチャーの一覧(発行店、額面、期限) |
 | `present_voucher` | 店舗のチャレンジに対して提示に署名する |
@@ -140,10 +210,14 @@ kangoh settle -p program.json bakery-claim.json cafe-claim.json
 
 | ツール | 内容 |
 |---|---|
-| `issue_voucher` | 購入後、顧客の受取鍵にバウチャーを発行する |
+| `issue_voucher` | 窓口で顧客の受取鍵にバウチャーを発行する。レシート型のプログラムでは額面を指定 |
 | `challenge` | 提示1回分のチャレンジ |
 | `redeem_voucher` | 提示を受領する。検証し、記録し、請求の根拠として保管する |
 | `claim` | 運営者に送る記録と提示内容 |
+| `receipts` | その日のレシート申請。重複による拒否を先頭に、続いて確認待ち |
+| `approve_receipts` | 売上と合う申請にバウチャーを署名する。必要なら金額を訂正 |
+| `reject_receipt` | 顧客に見える理由を付けて申請を断る |
+| `sync_receipts` | 署名付きレシートQRでの申請を、確認なしで発行する |
 
 **運営者**(`kangoh-mcp operator`): 状態を持ちません。
 
