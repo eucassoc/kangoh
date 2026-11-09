@@ -10,10 +10,15 @@
 // with receipts and stores answer the claims (desk.ts).
 //
 //   kangoh registry --port 8788 --file claims.jsonl [--token SECRET]
-//                   [--program program.json --state receipts.jsonl --chain receipts.chain.jsonl]
+//                   [--program program.json [--key operator.json]
+//                    [--state receipts.jsonl --chain receipts.chain.jsonl]]
 //
-//   POST /claim   {"voucher": <digest>, "store": <id>}  → 200 {claimed, store, at}, or 409 when another store has it
+//   POST /claim   {"voucher": <digest>, "store": <id>, "presentation"?}
+//                 → 200 {claimed, store, at, change?}, or 409 when another store has it.
+//                 With the presentation of part of a voucher, the registry
+//                 (given the operator's key) issues the rest as change.
 //   GET  /spent/<digest>                                 → 200 {spent, store?, at?}
+//   GET  /change/<digest>                                → 200 {change}: the change issued for a voucher, for a wallet that missed it
 //   GET  /health                                          → 200
 //
 //   POST /receipts              {receipt | token, holder}  → 201 claim, 409 duplicate, 422 refused
@@ -23,6 +28,11 @@
 //   POST /receipts/<id>/reject  (store token) {reason}
 //   GET  /r                                                 → what a phone shows for a receipt QR opened without the app
 import { appendFile, readFile } from 'node:fs/promises';
+import type { JWK } from 'jose';
+import { sha256 } from './digest.js';
+import { used, verifyPresentation } from './presentation.js';
+import type { Program } from './program.js';
+import { issueChange } from './voucher.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { VoucherError } from './errors.js';
@@ -33,6 +43,8 @@ export interface Claimed {
   voucher: string;
   store: string;
   at: string;
+  /** The change issued when part of the voucher was used. */
+  change?: string;
 }
 
 /** What a registry answers to a claim. */
@@ -41,6 +53,14 @@ export interface ClaimResult {
   claimed: boolean;
   store: string;
   at: string;
+  /** The change, when part of the voucher was used. */
+  change?: string;
+}
+
+/** What the registry needs to issue change: the program and the operator's private key. */
+export interface ChangeIssuer {
+  program: Program;
+  key: JWK;
 }
 
 /** The registry's state: claims kept in memory and appended to a file. */
@@ -50,6 +70,7 @@ export class Registry {
   constructor(
     readonly file?: string,
     private readonly now: () => Date = () => new Date(),
+    private readonly changeIssuer?: ChangeIssuer,
   ) {}
 
   /** Reloads the claims from the file, if any. */
@@ -69,19 +90,34 @@ export class Registry {
     }
   }
 
-  /** Claims a voucher for a store. Throws a VoucherError('spent') when another store has it. */
-  async claim(voucher: string, store: string): Promise<ClaimResult> {
+  /**
+   * Claims a voucher for a store. Throws a VoucherError('spent') when
+   * another store has it. With the presentation of part of the voucher, the
+   * registry verifies it and issues the rest as change to the key the holder
+   * named; asked again by the same store, it returns the same change.
+   */
+  async claim(voucher: string, store: string, presentation?: string): Promise<ClaimResult> {
     if (!/^[0-9a-f]{64}$/.test(voucher)) throw new Error('voucher must be a SHA-256 digest');
     if (!store) throw new Error('store is required');
     const prev = this.claims.get(voucher);
     if (prev) {
       if (prev.store !== store) throw new VoucherError('spent', `already redeemed at ${prev.store} at ${prev.at}`);
-      return { claimed: false, store: prev.store, at: prev.at };
+      return { claimed: false, store: prev.store, at: prev.at, ...(prev.change ? { change: prev.change } : {}) };
     }
-    const c: Claimed = { voucher, store, at: this.now().toISOString() };
+    const now = this.now();
+    let change: string | undefined;
+    if (presentation) {
+      if (!this.changeIssuer) throw new VoucherError('change', 'this registry does not issue change');
+      const { program, key } = this.changeIssuer;
+      const p = await verifyPresentation(program, presentation, { aud: store, at: now });
+      if (sha256(p.voucher) !== voucher) throw new Error('the presentation is not of this voucher');
+      const rest = p.claims.value - used(p);
+      if (rest > 0) change = await issueChange(program, key, { digest: voucher, claims: p.claims }, p.kb.change?.jwk as JWK, rest, now);
+    }
+    const c: Claimed = { voucher, store, at: now.toISOString(), ...(change ? { change } : {}) };
     this.claims.set(voucher, c);
     if (this.file) await appendFile(this.file, JSON.stringify(c) + '\n');
-    return { claimed: true, store, at: c.at };
+    return { claimed: true, store, at: c.at, ...(change ? { change } : {}) };
   }
 
   spent(voucher: string): Claimed | undefined {
@@ -122,17 +158,24 @@ export function registryServer(opts: RegistryServerOptions): Server {
       if (opts.desk && (url.pathname === '/receipts' || url.pathname.startsWith('/receipts/') || url.pathname === '/r')) {
         return await deskRoute(opts.desk, req, res, url, json);
       }
+      const ch = url.pathname.match(/^\/change\/([0-9a-f]{64})$/);
+      if (req.method === 'GET' && ch) {
+        // Change is bound to the holder's key, so whoever asks can have it.
+        res.setHeader('access-control-allow-origin', '*');
+        const c = opts.registry.spent(ch[1] as string);
+        return c?.change ? json(res, 200, { change: c.change }) : json(res, 404, { error: 'no change for this voucher' });
+      }
       if (!authorized(req, opts.token)) return json(res, 401, { error: 'unauthorized' });
       if (req.method === 'POST' && url.pathname === '/claim') {
-        const body = (await readBody(req)) as { voucher?: string; store?: string };
+        const body = (await readBody(req)) as { voucher?: string; store?: string; presentation?: string };
         try {
-          return json(res, 200, await opts.registry.claim(String(body.voucher ?? ''), String(body.store ?? '')));
+          return json(res, 200, await opts.registry.claim(String(body.voucher ?? ''), String(body.store ?? ''), body.presentation ? String(body.presentation) : undefined));
         } catch (e) {
           if (e instanceof VoucherError && e.code === 'spent') {
             const prev = opts.registry.spent(String(body.voucher)) as Claimed;
             return json(res, 409, { error: e.message, store: prev.store, at: prev.at });
           }
-          return json(res, 400, { error: (e as Error).message });
+          return json(res, 400, { error: (e as Error).message, ...(e instanceof VoucherError ? { code: e.code } : {}) });
         }
       }
       const m = url.pathname.match(/^\/spent\/([0-9a-f]{64})$/);
@@ -247,26 +290,32 @@ export class RegistryClient {
    * Claims a voucher for the store. Resolves to the registry's answer, or to
    * undefined when the registry could not be reached and is not required.
    * Rejects with VoucherError('spent') when another store has the voucher.
+   * With a presentation (part of the voucher used), the registry must answer
+   * with the change, or the claim fails: without change the customer would
+   * lose the rest.
    */
-  async claim(voucher: string, store: string): Promise<ClaimResult | undefined> {
+  async claim(voucher: string, store: string, presentation?: string): Promise<ClaimResult | undefined> {
+    const required = this.opts.required || presentation !== undefined;
     let res: Response;
     try {
       res = await fetch(new URL('/claim', this.opts.url), {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(this.opts.token ? { authorization: `Bearer ${this.opts.token}` } : {}) },
-        body: JSON.stringify({ voucher, store }),
+        body: JSON.stringify({ voucher, store, ...(presentation ? { presentation } : {}) }),
         signal: AbortSignal.timeout(this.opts.timeoutMs ?? 3000),
       });
     } catch (e) {
-      if (this.opts.required) throw new Error(`registry unreachable: ${(e as Error).message}`);
+      if (presentation) throw new VoucherError('change', `the registry cannot be reached, so no change can be issued; use the whole voucher (${(e as Error).message})`);
+      if (required) throw new Error(`registry unreachable: ${(e as Error).message}`);
       return undefined;
     }
-    const body = (await res.json().catch(() => ({}))) as { error?: string; store?: string; at?: string; claimed?: boolean };
+    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; store?: string; at?: string; claimed?: boolean; change?: string };
     if (res.status === 409) throw new VoucherError('spent', body.error ?? `already redeemed at ${body.store}`);
     if (!res.ok) {
-      if (this.opts.required) throw new Error(`registry: ${res.status} ${body.error ?? ''}`);
+      if (presentation) throw new VoucherError('change', `the registry issued no change: ${body.error ?? res.status}`);
+      if (required) throw new Error(`registry: ${res.status} ${body.error ?? ''}`);
       return undefined;
     }
-    return { claimed: Boolean(body.claimed), store: String(body.store), at: String(body.at) };
+    return { claimed: Boolean(body.claimed), store: String(body.store), at: String(body.at), ...(body.change ? { change: body.change } : {}) };
   }
 }

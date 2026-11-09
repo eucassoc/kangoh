@@ -90,7 +90,7 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
     {
       title: 'Add a voucher',
       description:
-        'Keep a voucher a store issued. If the published program (JSON) is given, the voucher is verified against it first: the issuer must be in the program and the voucher must be bound to this wallet.',
+        'Keep a voucher a store issued, or the change a store handed back after part of a voucher was used. If the published program (JSON) is given, the voucher is verified against it first: the issuer must be in the program and the voucher must be bound to a key of this wallet.',
       inputSchema: { voucher: z.string().describe('The voucher as issued'), program: z.string().optional().describe('The published program, as JSON') },
       outputSchema: heldSchema,
     },
@@ -105,6 +105,8 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
       }
       if (!w.vouchers.some((x) => sha256(x) === sha256(v))) {
         w.vouchers.push(v);
+        const parent = (decodeJwt(splitVoucher(v).jwt) as Partial<VoucherClaims>).chg?.parent;
+        if (parent) w.changes = (w.changes ?? []).filter((c) => c.parent !== parent);
         await saveWalletFile(path, w);
       }
       const h = describe(v, now());
@@ -137,25 +139,37 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
     {
       title: 'Present a voucher',
       description:
-        'Sign a presentation of a voucher to a store, against the challenge the store gave. Hand the result to the store. The voucher stays in the wallet until remove_voucher, once the store has accepted it.',
+        'Sign a presentation of a voucher to a store, against the challenge the store gave. Hand the result to the store. With amount, only that many points are used: the store takes the voucher and hands back the rest as change, issued by the program operator to a fresh key of this wallet; keep it with add_voucher. The voucher stays in the wallet until remove_voucher, once the store has accepted it.',
       inputSchema: {
         store: z.string().describe('The store id the voucher is presented to, as it appears in the program'),
         challenge: z.string().describe('The challenge the store gave for this presentation'),
-        digest: z.string().optional().describe('Which voucher; the oldest valid one if omitted'),
+        digest: z.string().optional().describe('Which voucher; if omitted, the oldest valid one worth at least amount'),
+        amount: z.number().int().positive().optional().describe('Points to use, when less than the whole voucher'),
+        program: z.string().optional().describe("The published program (JSON), so that change the store does not hand back can be fetched from the operator's service"),
       },
-      outputSchema: { presentation: z.string(), ...heldSchema },
+      outputSchema: { presentation: z.string(), used: z.number(), ...heldSchema },
     },
-    async ({ store, challenge, digest }) => {
+    async ({ store, challenge, digest, amount, program }) => {
       const w = await load();
       const valid = w.vouchers.filter((v) => !describe(v, now()).expired);
-      const v = digest ? w.vouchers[find(w, digest)] : valid[0];
-      if (!v) throw new Error('no valid voucher in the wallet');
+      const v = digest ? w.vouchers[find(w, digest)] : valid.find((x) => amount === undefined || describe(x).value >= amount);
+      if (!v) throw new Error(amount !== undefined && valid.length ? `no single voucher is worth ${amount}; present several` : 'no valid voucher in the wallet');
       const h = describe(v, now());
       if (h.expired) throw new Error(`voucher ${h.digest} expired at ${h.expires}`);
+      if (amount !== undefined && amount > h.value) throw new Error(`voucher ${h.digest} is worth ${h.value}, less than ${amount}`);
       const key = keyFor(w, (decodeJwt(splitVoucher(v).jwt) as Partial<VoucherClaims>).cnf?.jwk?.x);
       if (!key) throw new Error(`voucher ${h.digest} is bound to a key this wallet does not hold`);
-      const presentation = await present(v, key.privateJwk, store, challenge, now());
-      const out = { presentation, ...h };
+      let partial;
+      if (amount !== undefined && amount < h.value) {
+        const changeKey = await generateKey();
+        partial = { amount, change: changeKey.publicJwk };
+        const service = program ? parseProgram(program).service : undefined;
+        w.keys = [...(w.keys ?? []), changeKey];
+        w.changes = [...(w.changes ?? []).filter((c) => c.parent !== h.digest), { parent: h.digest, kid: changeKey.kid, ...(service ? { service } : {}) }];
+        await saveWalletFile(path, w);
+      }
+      const presentation = await present(v, key.privateJwk, store, challenge, now(), partial);
+      const out = { presentation, used: amount ?? h.value, ...h };
       return { ...text(out), structuredContent: out };
     },
   );
@@ -173,7 +187,7 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
       const [v] = w.vouchers.splice(find(w, digest), 1);
       const x = (decodeJwt(splitVoucher(v as string).jwt) as Partial<VoucherClaims>).cnf?.jwk?.x;
       const inUse = (k: { publicJwk: JWK }) => w.vouchers.some((u) => (decodeJwt(splitVoucher(u).jwt) as Partial<VoucherClaims>).cnf?.jwk?.x === k.publicJwk.x);
-      if (w.keys) w.keys = w.keys.filter((k) => k.publicJwk.x !== x || inUse(k) || (w.pending ?? []).some((p) => p.kid === k.kid));
+      if (w.keys) w.keys = w.keys.filter((k) => k.publicJwk.x !== x || inUse(k) || [...(w.pending ?? []), ...(w.changes ?? [])].some((p) => p.kid === k.kid));
       await saveWalletFile(path, w);
       return { ...text({ removed: digest }), structuredContent: { removed: digest } };
     },
@@ -226,7 +240,7 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
     {
       title: 'Check receipt claims',
       description:
-        'Ask the operator\'s service about the receipt claims this wallet is waiting on, and keep the points the stores have issued. A refused claim is dropped with the store\'s reason; the customer can take the receipt to the store.',
+        'Ask the operator\'s service about the receipt claims this wallet is waiting on, and keep the points the stores have issued. A refused claim is dropped with the store\'s reason; the customer can take the receipt to the store. Change due from a voucher used in part, that the store did not hand back, is fetched too.',
       outputSchema: {
         claims: z.array(z.object({ id: z.string(), store: z.string(), status: z.string(), value: z.number(), reason: z.string().optional() })),
       },
@@ -262,6 +276,19 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
         }
       }
       w.pending = still;
+      // Change the store did not hand back, fetched from the operator's registry.
+      for (const ch of [...(w.changes ?? [])]) {
+        if (!ch.service) continue;
+        const res = await fetch(`${ch.service.replace(/\/$/, '')}/change/${ch.parent}`, { signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+        if (!res?.ok) continue;
+        const { change } = (await res.json()) as { change?: string };
+        const k = (w.keys ?? []).find((k) => k.kid === ch.kid);
+        if (!change || !k || (decodeJwt(splitVoucher(change).jwt) as Partial<VoucherClaims>).cnf?.jwk?.x !== k.publicJwk.x) continue;
+        if (!w.vouchers.includes(change)) w.vouchers.push(change);
+        w.changes = (w.changes ?? []).filter((c) => c !== ch);
+        const h = describe(change, now());
+        out.push({ id: ch.parent, store: h.issuer, status: 'change', value: h.value });
+      }
       await saveWalletFile(path, w);
       return { ...text({ claims: out }), structuredContent: { claims: out } };
     },
@@ -317,13 +344,20 @@ export function storeServer(dir: string, now: () => Date = () => new Date()): Mc
     {
       title: 'Redeem a voucher',
       description:
-        "Accept a presentation a customer handed over for one of this store's challenges. The issuer's and the holder's signatures, the challenge and the expiry are checked against the program; the presentation is recorded and kept as the claim on the issuer. Give the customer the discount only when this succeeds.",
+        "Accept a presentation a customer handed over for one of this store's challenges. The issuer's and the holder's signatures, the challenge and the expiry are checked against the program; the presentation is recorded and kept as the claim on the issuer. Give the customer a discount of `amount` only when this succeeds. When the customer used part of the voucher, the operator's registry issues the rest as `change`: hand it back to the customer.",
       inputSchema: { presentation: z.string() },
-      outputSchema: { issuer: z.string(), value: z.number(), voucher: z.string().describe('Digest of the voucher'), record: z.number().describe("Sequence number of this store's record") },
+      outputSchema: {
+        issuer: z.string(),
+        value: z.number().describe("The voucher's value"),
+        amount: z.number().describe('Points taken: the discount to give'),
+        change: z.string().optional().describe('When part of the voucher was used: the rest, issued by the operator, to hand back to the customer'),
+        voucher: z.string().describe('Digest of the voucher'),
+        record: z.number().describe("Sequence number of this store's record"),
+      },
     },
     async ({ presentation }) => {
       const r = await (await store).redeem(presentation.trim());
-      const out = { issuer: r.claims.iss, value: r.claims.value, voucher: r.voucherDigest, record: r.record.seq };
+      const out = { issuer: r.claims.iss, value: r.claims.value, amount: r.amount, ...(r.change ? { change: r.change } : {}), voucher: r.voucherDigest, record: r.record.seq };
       return { ...text(out), structuredContent: out };
     },
   );

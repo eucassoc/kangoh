@@ -107,6 +107,28 @@ what the store submits for settlement, so a store keeps them where they
 cannot be changed afterwards; the `Recorder` interface is where an
 append-only file or an evidence log with signed checkpoints plugs in.
 
+## Using part of a voucher
+
+A voucher is spent whole, like a coin. To use part of one, the customer's
+presentation names the points used and a fresh key for the rest; the store
+takes the voucher as usual, and the operator's registry, which the store
+asks anyway, issues the rest as **change**: a voucher signed with the
+operator's key (`operator` in the program), worth what is left, valid until
+the original expires, naming the original and the store that issued it. The
+store hands it back; a wallet that missed it fetches it from the registry.
+The store does nothing more.
+
+```sh
+kangoh registry --program program.json --key operator.json   # the registry, issuing change with the operator's key
+```
+
+Change only splits a store's voucher; it never makes points. The store
+that issued the original pays every part of it, and settlement accepts
+change only if it is exactly the rest of a voucher a store redeemed in part,
+issued to the key the holder named for it, once. Change the operator signs
+on its own is a finding. When the registry cannot be reached, part of a
+voucher is refused and the whole voucher can still be used.
+
 ## Points from receipts
 
 Most shops have no way to hand a credential over at the till, but every shop
@@ -120,6 +142,7 @@ the purchase and the store still signs the voucher:
   "validDays": 180,
   "receiptDays": 7,
   "service": "https://points.arcade.example",
+  "operator": { "id": "operator.arcade.example", "key": { "...": "..." } },
   "stores": [
     { "id": "bakery.example", "key": { "...": "..." } },
     { "id": "cafe.example", "key": { "...": "..." }, "receipts": "signed" }
@@ -211,10 +234,10 @@ wallet is a file holding the key and the vouchers (`KANGOH_WALLET`, default
 |---|---|
 | `receiving_key` | The public key to give a store at checkout, so it can issue a voucher to this wallet |
 | `claim_receipt` | Claim points with a receipt: its QR, or the store, time, number and total as printed |
-| `check_claims` | Collect the vouchers stores have issued for the claims, and the reasons for refusals |
+| `check_claims` | Collect the vouchers stores have issued for the claims, the reasons for refusals, and change not handed back |
 | `add_voucher` | Keep an issued voucher, verifying it against the program if given |
 | `list_vouchers` | The vouchers held, with issuer, value and expiry |
-| `present_voucher` | Sign a presentation to a store against its challenge |
+| `present_voucher` | Sign a presentation to a store against its challenge, of the whole voucher or part of it |
 | `remove_voucher` | Drop a voucher once the store accepted it |
 
 **Store** (`kangoh-mcp store`): the store's directory (`KANGOH_STORE`) holds
@@ -226,7 +249,7 @@ The directory is the store's whole state.
 |---|---|
 | `issue_voucher` | Issue a voucher to a customer's receiving key at the counter, of a given value in a receipt program |
 | `challenge` | A challenge for one presentation |
-| `redeem_voucher` | Accept a presentation: verify, record, keep it as the claim |
+| `redeem_voucher` | Accept a presentation: verify, record, keep it as the claim; returns the change when part was used |
 | `claim` | The records and presentations to send to the operator |
 | `receipts` | The day's receipt claims: refused duplicates first, then those waiting for review |
 | `approve_receipts` | Sign vouchers for claims that match the sales, correcting totals if needed |

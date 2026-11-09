@@ -2,7 +2,7 @@ import { SignJWT, compactVerify, decodeJwt, decodeProtectedHeader, type JWK } fr
 import { randomId } from './digest.js';
 import { VoucherError } from './errors.js';
 import { ALG, signingKey, toPublic, verifyingKey } from './keys.js';
-import { member, vct, type Program } from './program.js';
+import { isOperator, member, vct, type Program } from './program.js';
 
 /**
  * A voucher is an SD-JWT VC (draft-ietf-oauth-sd-jwt-vc) with no selective
@@ -21,6 +21,18 @@ export interface VoucherClaims {
   cnf: { jwk: JWK };
   program: string;
   value: number;
+  /**
+   * On change only: the voucher it was split from, and the store that
+   * issued the original and pays it.
+   */
+  chg?: Change;
+}
+
+export interface Change {
+  /** Digest of the voucher this is the rest of. */
+  parent: string;
+  /** The store that issued the original voucher. */
+  origin: string;
 }
 
 export const VOUCHER_TYP = 'dc+sd-jwt';
@@ -58,6 +70,42 @@ export async function issueVoucher(program: Program, issuer: Issuer, holder: JWK
   return jwt + '~';
 }
 
+/**
+ * Issues change: the rest of a voucher a customer used part of, to the key
+ * the customer named for it. Signed by the operator, worth `value`, valid
+ * until the original expires, and naming the original and the store that
+ * pays it. Only the operator's registry does this.
+ */
+export async function issueChange(
+  program: Program,
+  operatorKey: JWK,
+  parent: { digest: string; claims: VoucherClaims },
+  holder: JWK,
+  value: number,
+  now: Date = new Date(),
+): Promise<string> {
+  const op = program.operator;
+  if (!op) throw new VoucherError('program', 'the program names no operator to issue change');
+  if (op.key.x !== toPublic(operatorKey).x) throw new VoucherError('issuer', 'the key is not the operator key in the program');
+  if (!Number.isInteger(value) || value <= 0) throw new VoucherError('program', `change of ${value}`);
+  const origin = parent.claims.chg?.origin ?? parent.claims.iss;
+  return (
+    (await new SignJWT({
+      vct: vct(program),
+      iss: op.id,
+      jti: randomId(),
+      cnf: { jwk: toPublic(holder) },
+      program: program.name,
+      value,
+      chg: { parent: parent.digest, origin },
+    })
+      .setProtectedHeader({ alg: ALG, typ: VOUCHER_TYP, ...(operatorKey.kid ? { kid: operatorKey.kid } : {}) })
+      .setIssuedAt(Math.floor(now.getTime() / 1000))
+      .setExpirationTime(parent.claims.exp)
+      .sign(await signingKey(operatorKey))) + '~'
+  );
+}
+
 /** Splits a voucher, or a presentation, into the issuer's JWT and the rest. */
 export function splitVoucher(s: string): { jwt: string; voucher: string; kb: string } {
   const end = s.lastIndexOf('~');
@@ -87,15 +135,25 @@ export async function verifyVoucher(program: Program, s: string, opts: { at?: Da
   if (header.typ !== VOUCHER_TYP && header.typ !== 'vc+sd-jwt') throw new VoucherError('format', `typ ${header.typ} is not ${VOUCHER_TYP}`);
   if (header.alg !== ALG) throw new VoucherError('format', `alg ${header.alg} is not ${ALG}`);
   if (typeof claims.iss !== 'string') throw new VoucherError('format', 'no issuer');
-  const m = member(program, claims.iss);
-  if (!m) throw new VoucherError('issuer', `issuer ${claims.iss} is not in the program`);
+  const change = isOperator(program, claims.iss);
+  const key = change ? program.operator?.key : member(program, claims.iss)?.key;
+  if (!key) throw new VoucherError('issuer', `issuer ${claims.iss} is not in the program`);
   try {
-    await compactVerify(jwt, await verifyingKey(m.key));
+    await compactVerify(jwt, await verifyingKey(key));
   } catch {
     throw new VoucherError('issuer', `the signature is not ${claims.iss}'s`);
   }
-  if (claims.vct !== vct(program) || claims.program !== program.name || !validValue(program, claims.value)) {
-    throw new VoucherError('program', 'the voucher does not match the program');
+  if (claims.vct !== vct(program) || claims.program !== program.name) throw new VoucherError('program', 'the voucher does not match the program');
+  if (change) {
+    // Change is worth whatever was left, and names the store that pays it.
+    const c = claims.chg;
+    if (!Number.isInteger(claims.value) || (claims.value as number) <= 0) throw new VoucherError('program', 'change must be worth a positive whole number');
+    if (typeof c?.parent !== 'string' || !/^[0-9a-f]{64}$/.test(c.parent) || typeof c.origin !== 'string' || !member(program, c.origin)) {
+      throw new VoucherError('format', 'change must name the voucher it was split from and a store of the program');
+    }
+  } else {
+    if (claims.chg !== undefined) throw new VoucherError('format', 'only the operator issues change');
+    if (!validValue(program, claims.value)) throw new VoucherError('program', 'the voucher does not match the program');
   }
   if (typeof claims.jti !== 'string' || typeof claims.iat !== 'number' || typeof claims.exp !== 'number' || typeof claims.cnf?.jwk !== 'object') {
     throw new VoucherError('format', 'jti, iat, exp and cnf.jwk are required');

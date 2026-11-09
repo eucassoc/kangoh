@@ -1,4 +1,4 @@
-export type VoucherErrorCode = 'format' | 'issuer' | 'program' | 'holder' | 'audience' | 'nonce' | 'expired' | 'spent';
+export type VoucherErrorCode = 'format' | 'issuer' | 'program' | 'holder' | 'audience' | 'nonce' | 'expired' | 'spent' | 'change';
 
 /** A voucher or presentation that does not verify, with why. */
 export class VoucherError extends Error {

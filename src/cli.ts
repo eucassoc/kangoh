@@ -7,9 +7,11 @@
 //   kangoh verify -p program.json --aud STORE [--nonce N] [presentation]
 //   kangoh settle -p program.json claim.json...
 //   kangoh registry [--port 8788] [--file claims.jsonl] [--token SECRET]
-//                   [--program program.json [--state receipts.jsonl] [--chain receipts.chain.jsonl]]
-//                                                   the operator's service; with a program, also the
-//                                                   receipt desk (HMAC key in KANGOH_DESK_SECRET)
+//                   [--program program.json [--key operator.json] [--state receipts.jsonl] [--chain receipts.chain.jsonl]]
+//                                                   the operator's service; with a program that earns
+//                                                   from receipts, also the receipt desk (HMAC key in
+//                                                   KANGOH_DESK_SECRET), and
+//                                                   with the operator's key, change for vouchers used in part
 //   kangoh receipt-qr -p program.json -k store.json --number N --total T [--at TIME] [--value V]
 //                                                   what a point of sale prints on a receipt
 //   kangoh receipts [list] [--from DATE]            a store's receipt claims (KANGOH_STORE)
@@ -23,7 +25,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { generateKey, toPublic } from './keys.js';
-import { parseProgram } from './program.js';
+import { parseProgram, type Program } from './program.js';
 import { present, verifyPresentation } from './presentation.js';
 import { formatFinding, settle } from './settlement.js';
 import type { Claim } from './store.js';
@@ -178,22 +180,28 @@ async function main(argv: string[]): Promise<number> {
           file: { type: 'string', default: 'claims.jsonl' },
           token: { type: 'string' },
           program: { type: 'string' },
+          key: { type: 'string' },
           state: { type: 'string', default: 'receipts.jsonl' },
           chain: { type: 'string', default: 'receipts.chain.jsonl' },
         },
       });
-      const registry = new Registry(values.file);
+      const program = values.program ? parseProgram(await read(values.program)) : undefined;
+      if (values.key && !program) throw new Error('--key needs --program: change is issued under a program');
+      const key = values.key ? JSON.parse(await read(values.key)) : undefined;
+      if (key && program?.operator?.key.x !== key.x) throw new Error("the key is not the operator's key in the program");
+      const registry = new Registry(values.file, undefined, program && key ? { program, key } : undefined);
       await registry.load();
       let desk: ReceiptDesk | undefined;
-      if (values.program) {
+      if (program?.earn) {
         const secret = process.env.KANGOH_DESK_SECRET;
         if (!secret) throw new Error('KANGOH_DESK_SECRET must hold the key the public chain hashes receipts with');
-        desk = new ReceiptDesk({ program: parseProgram(await read(values.program)), secret, state: values.state, chain: values.chain });
+        desk = new ReceiptDesk({ program: program as Program, secret, state: values.state, chain: values.chain });
         await desk.load();
       }
       const server = registryServer({ registry, ...(values.token ? { token: values.token } : {}), ...(desk ? { desk } : {}) });
       await new Promise<void>((resolve) => server.listen(Number(values.port), resolve));
       console.error(`registry on port ${values.port}, ${registry.size} claims in ${values.file}`);
+      if (key) console.error('issuing change with the operator key');
       if (desk) console.error(`receipt desk: ${desk.size} receipt claims in ${values.state}, outcomes chained in ${values.chain}`);
       await new Promise(() => {});
       return 0;

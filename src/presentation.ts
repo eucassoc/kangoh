@@ -1,7 +1,7 @@
 import { SignJWT, compactVerify, decodeJwt, decodeProtectedHeader, type JWK } from 'jose';
 import { sha256b64url } from './digest.js';
 import { VoucherError } from './errors.js';
-import { ALG, signingKey, verifyingKey } from './keys.js';
+import { ALG, signingKey, toPublic, verifyingKey } from './keys.js';
 import type { Program } from './program.js';
 import { splitVoucher, verifyVoucher, type VoucherClaims } from './voucher.js';
 
@@ -18,6 +18,16 @@ export interface KeyBinding {
   aud: string;
   nonce: string;
   sd_hash: string;
+  /** Points used, when less than the voucher's value. */
+  amount?: number;
+  /** The key the rest is to be issued to, as change, when `amount` is less than the value. */
+  change?: { jwk: JWK };
+}
+
+/** Using part of a voucher: how much, and the key the change goes to. */
+export interface PartialUse {
+  amount: number;
+  change: JWK;
 }
 
 export interface Presented {
@@ -27,10 +37,15 @@ export interface Presented {
   kb: KeyBinding;
 }
 
-/** Signs a presentation of a voucher to a store. */
-export async function present(voucher: string, holder: JWK, aud: string, nonce: string, now: Date = new Date()): Promise<string> {
+/**
+ * Signs a presentation of a voucher to a store. With `partial`, only
+ * `amount` is used and the rest comes back as change, issued by the
+ * operator to `partial.change`, a fresh key, so that the change is not
+ * linked to this voucher's key.
+ */
+export async function present(voucher: string, holder: JWK, aud: string, nonce: string, now: Date = new Date(), partial?: PartialUse): Promise<string> {
   const { voucher: v } = splitVoucher(voucher);
-  const kb = await new SignJWT({ nonce, sd_hash: sha256b64url(v) })
+  const kb = await new SignJWT({ nonce, sd_hash: sha256b64url(v), ...(partial ? { amount: partial.amount, change: { jwk: toPublic(partial.change) } } : {}) })
     .setProtectedHeader({ alg: ALG, typ: KB_TYP })
     .setIssuedAt(Math.floor(now.getTime() / 1000))
     .setAudience(aud)
@@ -65,5 +80,24 @@ export async function verifyPresentation(program: Program, s: string, opts: { au
   if (payload.aud !== opts.aud) throw new VoucherError('audience', `presented to ${payload.aud}, not to ${opts.aud}`);
   if (opts.nonce !== undefined && payload.nonce !== opts.nonce) throw new VoucherError('nonce', 'the challenge does not match');
   if (typeof payload.iat !== 'number' || typeof payload.nonce !== 'string') throw new VoucherError('format', 'key binding needs iat and nonce');
+  if (payload.amount !== undefined) {
+    if (!Number.isInteger(payload.amount) || payload.amount <= 0 || payload.amount > claims.value) {
+      throw new VoucherError('format', `amount ${payload.amount} is not between 1 and the voucher's value ${claims.value}`);
+    }
+    const c = payload.change?.jwk;
+    if (payload.amount < claims.value && (!c || c.kty !== 'OKP' || c.crv !== 'Ed25519' || typeof c.x !== 'string' || 'd' in c)) {
+      throw new VoucherError('format', 'using part of a voucher needs a public key for the change');
+    }
+  }
   return { voucher, claims, kb: payload as KeyBinding };
+}
+
+/** The points a presentation uses: its amount, or the whole voucher. */
+export function used(p: Presented): number {
+  return p.kb.amount ?? p.claims.value;
+}
+
+/** The store that pays for a voucher: its issuer, or for change, the store that issued the original. */
+export function payer(claims: VoucherClaims): string {
+  return claims.chg?.origin ?? claims.iss;
 }

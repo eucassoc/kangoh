@@ -1,7 +1,7 @@
 import type { JWK } from 'jose';
 import { randomId, sha256 } from './digest.js';
 import { VoucherError } from './errors.js';
-import { verifyPresentation, type Presented } from './presentation.js';
+import { used, verifyPresentation, type Presented } from './presentation.js';
 import type { Program } from './program.js';
 import type { Record, Recorder } from './record.js';
 import { issueVoucher } from './voucher.js';
@@ -44,6 +44,10 @@ export interface Redemption extends Presented {
   record: Record;
   /** Digest of the voucher, the key under which it is settled. */
   voucherDigest: string;
+  /** Points taken: the voucher's value, or the part the customer used. */
+  amount: number;
+  /** The rest of the voucher, issued by the operator, to hand back to the customer. */
+  change?: string;
 }
 
 /** What a store submits for settlement: its records and the presentations it took. */
@@ -141,6 +145,10 @@ export class Store {
    * signature, the holder's signature, the challenge, the expiry, that this
    * store has not taken the voucher before and, with a registry, that no
    * other store has either. Without a registry, that is found at settlement.
+   *
+   * When the customer uses part of the voucher, the registry is required: it
+   * takes the voucher and issues the rest as change, which the store hands
+   * back. The store does nothing more for it.
    */
   async redeem(presentation: string): Promise<Redemption> {
     const now = this.now();
@@ -149,19 +157,23 @@ export class Store {
     const voucherDigest = sha256(p.voucher);
     const taken = await this.takenSet();
     if (taken.has(voucherDigest)) throw new VoucherError('spent', 'already redeemed here');
+    const amount = used(p);
+    const partial = amount < p.claims.value;
+    if (partial && !this.registry) throw new VoucherError('change', "using part of a voucher needs the operator's registry, which issues the change; use the whole voucher");
     // Ask the operator's registry before taking it, so that a voucher spent
     // at another store is refused at the counter.
-    if (this.registry) await this.registry.claim(voucherDigest, this.id);
+    const answer = this.registry ? await this.registry.claim(voucherDigest, this.id, partial ? presentation : undefined) : undefined;
+    if (partial && !answer?.change) throw new VoucherError('change', 'the registry issued no change; use the whole voucher');
     taken.add(voucherDigest);
     const digest = sha256(presentation);
     const record = await this.recorder.append({
       at: now.toISOString(),
       event: 'redeemed',
       digest,
-      meta: { voucher: voucherDigest, issuer: p.claims.iss },
+      meta: { voucher: voucherDigest, issuer: p.claims.iss, amount: String(amount) },
     });
     await this.presentations.put(digest, presentation);
-    return { ...p, record, voucherDigest };
+    return { ...p, record, voucherDigest, amount, ...(answer?.change ? { change: answer.change } : {}) };
   }
 
   /** The store's claim for settlement. */

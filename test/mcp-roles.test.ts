@@ -106,17 +106,19 @@ test('a store issues and redeems, and the operator settles, through the MCP serv
 test('receipts through the MCP servers: the agent claims, the store reviews and approves, the agent collects', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'kangoh-'));
   const keys = { bakery: await generateKey(), cafe: await generateKey() };
+  const operator = await generateKey();
   const program: Program = {
     name: 'arcade.example',
     earn: { per: 100, points: 1 },
     validDays: 90,
+    operator: { id: 'operator.arcade.example', key: operator.publicJwk },
     stores: [
       { id: 'bakery.example', key: keys.bakery.publicJwk },
       { id: 'cafe.example', key: keys.cafe.publicJwk, receipts: 'signed' },
     ],
   };
   const desk = new ReceiptDesk({ program, secret: 's' });
-  const server = registryServer({ registry: new Registry(), desk });
+  const server = registryServer({ registry: new Registry(undefined, undefined, { program, key: operator.privateJwk }), desk });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   program.service = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const dirs: Record<string, string> = {};
@@ -126,7 +128,7 @@ test('receipts through the MCP servers: the agent claims, the store reviews and 
   ] as const) {
     dirs[name] = join(dir, name);
     await (await import('node:fs/promises')).mkdir(dirs[name]);
-    await writeFile(join(dirs[name], 'store.json'), JSON.stringify({ id, privateJwk: keys[name].privateJwk }));
+    await writeFile(join(dirs[name], 'store.json'), JSON.stringify({ id, privateJwk: keys[name].privateJwk, registry: { url: program.service } }));
     await writeFile(join(dirs[name], 'program.json'), JSON.stringify(program));
   }
   const wallet = await start('wallet', { KANGOH_WALLET: join(dir, 'wallet.json') });
@@ -159,12 +161,27 @@ test('receipts through the MCP servers: the agent claims, the store reviews and 
     const held = await call(wallet, 'list_vouchers');
     assert.equal(held.total, 17);
 
-    // Spent at the café with the key the bakery's voucher is bound to.
+    // 5 of the bakery's 12 at the café: the café takes the voucher and hands back 7 in change.
     const ch = await call(cafe, 'challenge');
     const bakeryVoucher = (held.vouchers as { issuer: string; digest: string }[]).find((v) => v.issuer === 'bakery.example') as { digest: string };
-    const p = await call(wallet, 'present_voucher', { store: ch.store, challenge: ch.challenge, digest: bakeryVoucher.digest });
+    const p = await call(wallet, 'present_voucher', { store: ch.store, challenge: ch.challenge, digest: bakeryVoucher.digest, amount: 5, program: JSON.stringify(program) });
+    assert.equal(p.used, 5);
     const r = await call(cafe, 'redeem_voucher', { presentation: p.presentation });
-    assert.equal(r.value, 12);
+    assert.deepEqual([r.value, r.amount], [12, 5]);
+    await call(wallet, 'remove_voucher', { digest: bakeryVoucher.digest });
+    const kept = await call(wallet, 'add_voucher', { voucher: r.change, program: JSON.stringify(program) });
+    assert.deepEqual([kept.issuer, kept.value], ['operator.arcade.example', 7]);
+    assert.equal((await call(wallet, 'list_vouchers')).total, 12);
+
+    // 3 of the change at the bakery; this time the change is not handed back, and the wallet fetches it.
+    const ch2 = await call(bakery, 'challenge');
+    const p2 = await call(wallet, 'present_voucher', { store: ch2.store, challenge: ch2.challenge, digest: kept.digest, amount: 3, program: JSON.stringify(program) });
+    const r2 = await call(bakery, 'redeem_voucher', { presentation: p2.presentation });
+    assert.equal(r2.amount, 3);
+    await call(wallet, 'remove_voucher', { digest: kept.digest });
+    const fetched = (await call(wallet, 'check_claims')).claims as { status: string; value: number }[];
+    assert.deepEqual(fetched.map((x) => [x.status, x.value]), [['change', 4]]);
+    assert.equal((await call(wallet, 'list_vouchers')).total, 9);
   } finally {
     await Promise.all([wallet.close(), bakery.close(), cafe.close()]);
     await new Promise<void>((r) => server.close(() => r()));

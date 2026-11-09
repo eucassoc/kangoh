@@ -20,6 +20,13 @@ export interface Program {
   service?: string;
   /** Verifiable credential type (`vct`) of the vouchers. */
   vct?: string;
+  /**
+   * The operator, who issues change: when a customer uses part of a
+   * voucher, the operator's registry takes the voucher and issues the rest
+   * as a new voucher, signed with this key. Change only splits a store's
+   * voucher; the store that issued the original still pays all of it.
+   */
+  operator?: { id: string; key: JWK };
   stores: Member[];
 }
 
@@ -55,6 +62,11 @@ export function member(program: Program, id: string): Member | undefined {
   return program.stores.find((m) => m.id === id);
 }
 
+/** Whether `id` is the operator, the issuer of change. */
+export function isOperator(program: Program, id: string | undefined): boolean {
+  return program.operator !== undefined && id === program.operator.id;
+}
+
 /** The points a receipt of `total` earns under the program; 0 when it earns none. */
 export function earned(program: Program, total: number): number {
   const e = program.earn;
@@ -80,6 +92,10 @@ export function parseProgram(json: string): Program {
   if (p.receiptDays !== undefined && !positive(p.receiptDays)) throw new Error('program: receiptDays must be a positive integer');
   if (p.service !== undefined && (typeof p.service !== 'string' || !/^https?:\/\//.test(p.service))) throw new Error('program: service must be an http(s) URL');
   if (!Array.isArray(p.stores) || p.stores.length === 0) throw new Error('program: stores is required');
+  if (p.operator !== undefined) {
+    if (typeof p.operator?.id !== 'string' || !p.operator.id || typeof p.operator.key !== 'object') throw new Error('program: operator needs an id and a key');
+    if (p.stores.some((m) => m?.id === p.operator?.id)) throw new Error('program: the operator id must differ from every store id');
+  }
   for (const m of p.stores) {
     if (typeof m?.id !== 'string' || !m.id || typeof m.key !== 'object') throw new Error('program: every store needs an id and a key');
     if (m.receipts !== undefined && m.receipts !== 'review' && m.receipts !== 'signed') throw new Error(`program: receipts of ${m.id} must be review or signed`);

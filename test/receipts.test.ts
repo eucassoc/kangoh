@@ -141,7 +141,8 @@ test('a receipt is claimed once: the first claim wins, a later one is refused an
     const dup = records.find((r) => r.meta.status === 'duplicate');
     assert.equal(dup.meta.duplicate_of, first.id);
     assert.equal(dup.meta.receipt, records[0].meta.receipt);
-    assert.doesNotMatch(lines.join('\n'), /1850|R01-0042|"x"/);
+    // Digests are random hex and may contain any digits; look at everything else.
+    assert.doesNotMatch(lines.join('\n').replace(/[0-9a-f]{32,}/g, ''), /1850|R01-0042|"x"/);
     // The private state is what the chain points to.
     const state = (await readFile(join(dir, 'receipts.jsonl'), 'utf8')).split('\n').filter(Boolean);
     assert.equal(records[0].subject.digest.sha256, sha256(state[0] as string));

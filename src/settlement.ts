@@ -1,6 +1,6 @@
 import { sha256 } from './digest.js';
-import { verifyPresentation } from './presentation.js';
-import type { Program } from './program.js';
+import { payer, used, verifyPresentation, type Presented } from './presentation.js';
+import { isOperator, type Program } from './program.js';
 import type { Claim } from './store.js';
 
 /** A redemption that is not paid, and why, tied to the store's record. */
@@ -32,7 +32,11 @@ export interface Settlement {
 
 /**
  * Settles a program period from the stores' claims. A voucher is paid once,
- * to the first store that recorded it, in time order across all stores.
+ * to the first store that recorded it, in time order across all stores, for
+ * the points used. Change is paid by the store that issued the original,
+ * and only if it is exactly the rest of a voucher redeemed in part, issued
+ * to the key the holder named for it, once. So the operator, who signs
+ * change, cannot make points: change it signs on its own is a finding.
  * Every redemption that is not paid is a finding.
  */
 export async function settle(program: Program, programJson: string, claims: Claim[]): Promise<Settlement> {
@@ -70,7 +74,8 @@ export async function settle(program: Program, programJson: string, claims: Clai
   }
   redemptions.sort((a, b) => a.record.at.localeCompare(b.record.at) || a.claim.store.localeCompare(b.claim.store) || a.record.seq - b.record.seq);
 
-  const paid = new Map<string, { store: string; seq: number }>();
+  const paid = new Map<string, { store: string; seq: number; p: Presented }>();
+  const changeOf = new Map<string, string>();
   for (const { claim, record } of redemptions) {
     const store = claim.store;
     const fail = (problem: string) => findings.push({ store, seq: record.seq, at: record.at, problem });
@@ -95,14 +100,37 @@ export async function settle(program: Program, programJson: string, claims: Clai
       fail('the record does not describe the submitted presentation');
       continue;
     }
-    const issuance = issued.get(digest);
-    if (!issuance) {
-      fail(`voucher signed with ${p.claims.iss}'s key, but ${p.claims.iss} never recorded issuing it; off-book issuance or a stolen key`);
-      continue;
+    let source: string;
+    if (isOperator(program, p.claims.iss)) {
+      const parentDigest = p.claims.chg?.parent as string;
+      const parent = paid.get(parentDigest);
+      if (!parent) {
+        fail(`change from ${p.claims.iss} for a voucher no store redeemed; change issued without a purchase`);
+        continue;
+      }
+      const pp = parent.p;
+      if (pp.kb.change?.jwk.x !== p.claims.cnf.jwk.x || pp.claims.value - used(pp) !== p.claims.value || p.claims.exp > pp.claims.exp || payer(pp.claims) !== payer(p.claims)) {
+        fail(`change does not match the rest of the voucher redeemed at ${parent.store} record ${parent.seq}`);
+        continue;
+      }
+      const other = changeOf.get(parentDigest);
+      if (other && other !== digest) {
+        fail(`a second change for the voucher redeemed at ${parent.store} record ${parent.seq}`);
+        continue;
+      }
+      changeOf.set(parentDigest, digest);
+      source = `change of ${parent.store} record ${parent.seq}`;
+    } else {
+      const issuance = issued.get(digest);
+      if (!issuance) {
+        fail(`voucher signed with ${p.claims.iss}'s key, but ${p.claims.iss} never recorded issuing it; off-book issuance or a stolen key`);
+        continue;
+      }
+      source = `record ${issuance.seq}`;
     }
     const at = Date.parse(record.at) / 1000;
     if (at > p.claims.exp) {
-      fail(`voucher from ${p.claims.iss} (record ${issuance.seq}) expired ${age(at - p.claims.exp)} before it was redeemed`);
+      fail(`voucher from ${p.claims.iss} (${source}) expired ${age(at - p.claims.exp)} before it was redeemed`);
       continue;
     }
     const first = paid.get(digest);
@@ -110,16 +138,18 @@ export async function settle(program: Program, programJson: string, claims: Clai
       fail(`voucher already redeemed at ${first.store} record ${first.seq}; holder ${holderId(p.claims.cnf.jwk.x)} presented it twice`);
       continue;
     }
-    paid.set(digest, { store, seq: record.seq });
+    paid.set(digest, { store, seq: record.seq, p });
     const s = statements.get(store) as Statement;
-    if (p.claims.iss === store) {
+    const from = payer(p.claims);
+    if (from === store) {
       s.own++;
       continue;
     }
+    const amount = used(p);
     s.accepted++;
-    s.receives += p.claims.value;
-    const issuer = statements.get(p.claims.iss);
-    if (issuer) issuer.pays += p.claims.value;
+    s.receives += amount;
+    const issuer = statements.get(from);
+    if (issuer) issuer.pays += amount;
   }
   findings.sort((a, b) => a.at.localeCompare(b.at) || a.store.localeCompare(b.store) || a.seq - b.seq);
   return { findings, statements: claims.map((c) => statements.get(c.store) as Statement) };

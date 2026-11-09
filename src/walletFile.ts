@@ -12,6 +12,17 @@ export interface WalletFile {
   keys?: KeyPair[];
   /** Receipt claims waiting for the store. */
   pending?: PendingClaim[];
+  /** Change due for vouchers used in part, until it is in the wallet. */
+  changes?: PendingChange[];
+}
+
+export interface PendingChange {
+  /** Digest of the voucher used in part. */
+  parent: string;
+  /** kid of the key the change is bound to. */
+  kid: string;
+  /** The operator's service, where missed change can be fetched. */
+  service?: string;
 }
 
 export interface PendingClaim {

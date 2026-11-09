@@ -1,5 +1,5 @@
 import { decodeJwt, type JWK } from 'jose';
-import { present } from './presentation.js';
+import { present, type PartialUse } from './presentation.js';
 import type { Redemption } from './store.js';
 import { splitVoucher } from './voucher.js';
 
@@ -35,14 +35,14 @@ export class Wallet {
     return undefined;
   }
 
-  /** Signs a presentation of a voucher to a store. */
-  present(voucher: string, aud: string, nonce: string, now: Date = new Date()): Promise<string> {
-    return present(voucher, this.privateJwk, aud, nonce, now);
+  /** Signs a presentation of a voucher to a store; with `partial`, of part of it, the rest to come back as change. */
+  present(voucher: string, aud: string, nonce: string, now: Date = new Date(), partial?: PartialUse): Promise<string> {
+    return present(voucher, this.privateJwk, aud, nonce, now, partial);
   }
 
-  /** Presents a voucher at a counter. */
-  async redeemAt(counter: Counter, voucher: string, now: Date = new Date()): Promise<Redemption> {
-    return counter.redeem(await this.present(voucher, counter.id, counter.challenge(), now));
+  /** Presents a voucher at a counter, or part of it. */
+  async redeemAt(counter: Counter, voucher: string, now: Date = new Date(), partial?: PartialUse): Promise<Redemption> {
+    return counter.redeem(await this.present(voucher, counter.id, counter.challenge(), now, partial));
   }
 }
 
