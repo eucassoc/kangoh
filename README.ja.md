@@ -14,8 +14,8 @@
 どの店舗でも受け取れて、確認するのは公開されたプログラムに照らした発行者の
 署名、保持者の署名、有効期限だけです。受け取った店舗は提示されたバウチャーを
 発行店への請求の根拠として保管し、運営者は各店舗の記録から店舗間を精算します。
-誰も顧客台帳を持たず、画面もありません。顧客側にあるのは鍵とウォレットで、
-それはAIエージェントがもともと持っているものです。
+誰も顧客台帳を持ちません。顧客側にあるのは鍵とウォレットで、スマホのアプリに
+入っています。
 
 [English](README.md)
 
@@ -47,8 +47,8 @@
 
 kangoh は、ブロックチェーンで共通ポイントを作る RaaS から生まれました。目的は
 同じで、どこか一社を信じなくても、お店どうしがポイントを発行し合い精算できる
-ことです。お客さまのポイントを AIエージェントやスマホのウォレットが持つなら、
-そのために台帳を共有する必要はありません。
+ことです。お客さまのポイントをスマホのウォレットが持つなら、そのために台帳を
+共有する必要はありません。
 
 | | ブロックチェーン型 | kangoh |
 |---|---|---|
@@ -58,7 +58,7 @@ kangoh は、ブロックチェーンで共通ポイントを作る RaaS から�
 | お釣り | トランザクションで出る | 運営者が発行し精算で検証。運営者はポイントを作れない |
 | 取引の見え方 | すべて公開 | 見えない。公開するのはハッシュと申請の結果だけ |
 | 手数料、速さ | 手数料、確定待ち | なし、一瞬 |
-| お客さまに必要なもの | 暗号資産のウォレット | エージェントのウォレット、パスキーで守るアプリ |
+| お客さまに必要なもの | 暗号資産のウォレット | パスキーで鍵を守るウォレットアプリ |
 | 運営者が止まったら | 動き続ける | ポイントを丸ごと使うことはでき、二重使用は精算で見つかる |
 
 手放したのは「運営者がいなくても動く」こと、得たのは速さ、手数料のなさ、
@@ -80,11 +80,11 @@ const program = parseProgram(programJson);
 const bakery = new Store({ id: 'bakery.example', privateJwk, program, programJson, recorder: new JsonlRecorder('bakery.jsonl') });
 await bakery.join();                                 // 最初に一度だけ
 
-// 購入後、レジがエージェントの鍵にバウチャーを発行する
-const voucher = await bakery.issue(agentPublicJwk);  // バウチャーはエージェントへ。記録に残るのはダイジェストだけ
+// 購入後、店舗がお客さまのウォレットの鍵にバウチャーを発行する
+const voucher = await bakery.issue(customerPublicJwk);  // バウチャーはウォレットへ。記録に残るのはダイジェストだけ
 
-// 別の店舗で、エージェントがチャレンジに対して提示する
-const wallet = new Wallet(agentPrivateJwk, agentPublicJwk);
+// 別の店舗で、ウォレットがチャレンジに対して提示する
+const wallet = new Wallet(customerPrivateJwk, customerPublicJwk);
 const presentation = await wallet.present(voucher, 'cafe.example', cafe.challenge());
 await cafe.redeem(presentation);                     // 検証し、記録し、提示内容を保管する
 
@@ -217,8 +217,8 @@ KANGOH_DESK_SECRET=... kangoh registry -p program.json --state receipts.jsonl --
 
 ```sh
 kangoh keygen -o bakery.json                               # 鍵ペア。所有者だけが読める(公開側をプログラムに載せる)
-kangoh issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
-kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
+kangoh issue -p program.json -k bakery.json -h customer.json  # バウチャーを標準出力へ
+kangoh present -k customer.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
 kangoh settle -p program.json bakery-claim.json cafe-claim.json
 
@@ -232,8 +232,9 @@ kangoh receipts sync                                       # 署名付きQRで�
 
 ## MCPサーバー
 
-`kangoh-mcp` は三つの役割をそれぞれエージェントに提供します(1プロセスに1役割)。
-画面はなく、エージェントがインターフェイスです。
+`kangoh-mcp` は三つの役割をそれぞれ MCP で提供します(1プロセスに1役割)。
+AIエージェントがネット上で無人で買い物をする場面のために用意したもので、
+スマホのアプリができるまでは、すべての役割を試す手段も兼ねます。
 
 ```json
 {
@@ -245,7 +246,7 @@ kangoh receipts sync                                       # 署名付きQRで�
 }
 ```
 
-**ウォレット**(`kangoh-mcp`): 顧客のエージェントがバウチャーを持ちます。
+**ウォレット**(`kangoh-mcp`): AIエージェントが顧客に代わってバウチャーを持ちます。
 ウォレットは鍵とバウチャーを入れたファイル(`KANGOH_WALLET`、既定は
 `~/.kangoh/wallet.json`)で、店舗には一切見えません。
 

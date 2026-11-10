@@ -17,8 +17,8 @@ in the same program accepts it, checking only the issuer's signature, the
 holder's signature and the expiry against the published program. The
 redeeming store keeps the presentation as its claim on the issuer, and the
 program operator settles between stores from the stores' records. Nobody
-keeps a customer record, and there is no screen: the customer's side is a
-key and a wallet, which an AI agent holds anyway.
+keeps a customer record: the customer's side is a key and a wallet, in an
+app on their phone.
 
 [日本語](README.ja.md)
 
@@ -52,8 +52,8 @@ how many days a voucher is valid.
 
 Kangoh grew out of RaaS, a shared reward program built on a blockchain. The
 aim is the same: shops issuing points to each other and settling without
-trusting any one company. With customers' points held by an AI agent or a
-phone wallet, a shared ledger is no longer needed for it:
+trusting any one company. With customers' points held in a wallet on their
+phone, a shared ledger is no longer needed for it:
 
 | | On a blockchain | kangoh |
 |---|---|---|
@@ -63,7 +63,7 @@ phone wallet, a shared ledger is no longer needed for it:
 | Change | Out of the transaction | Issued by the operator, checked at settlement; the operator cannot create points |
 | Visibility | Every transaction public | None; only hashes and claim outcomes are published |
 | Fees, speed | Fees, waiting | None, instant |
-| The customer needs | A crypto wallet | An agent's wallet, or an app with a passkey |
+| The customer needs | A crypto wallet | A wallet app whose key a passkey protects |
 | Without the operator | Keeps running | Whole points still spend; double spends are found at settlement |
 
 What kangoh gives up is running with no operator at all. What it gains is
@@ -85,11 +85,11 @@ const program = parseProgram(programJson);
 const bakery = new Store({ id: 'bakery.example', privateJwk, program, programJson, recorder: new JsonlRecorder('bakery.jsonl') });
 await bakery.join();                                 // once, before anything else
 
-// After a purchase, the point of sale issues a voucher to the agent's key.
-const voucher = await bakery.issue(agentPublicJwk);  // the voucher goes to the agent; only its digest is recorded
+// After a purchase, the store issues a voucher to the key of the customer's wallet.
+const voucher = await bakery.issue(customerPublicJwk);  // the voucher goes to the wallet; only its digest is recorded
 
-// At another store, the agent presents it against a challenge.
-const wallet = new Wallet(agentPrivateJwk, agentPublicJwk);
+// At another store, the wallet presents it against a challenge.
+const wallet = new Wallet(customerPrivateJwk, customerPublicJwk);
 const presentation = await wallet.present(voucher, 'cafe.example', cafe.challenge());
 await cafe.redeem(presentation);                     // verifies, records, keeps the presentation
 
@@ -234,8 +234,8 @@ has not been changed.
 
 ```sh
 kangoh keygen -o bakery.json                               # a key pair, readable by you only (put its public half in the program)
-kangoh issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
-kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
+kangoh issue -p program.json -k bakery.json -h customer.json  # a voucher, to standard output
+kangoh present -k customer.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
 kangoh settle -p program.json bakery-claim.json cafe-claim.json
 
@@ -249,8 +249,9 @@ kangoh receipts sync                                       # issue the claims ma
 
 ## MCP servers
 
-`kangoh-mcp` serves each of the three roles to an agent, one role per
-process. There is no screen; the agent is the interface.
+`kangoh-mcp` serves each of the three roles over MCP, one role per process.
+They are there for AI agents that will shop online unattended; until the
+phone app is out, they are also the way to try every role.
 
 ```json
 {
@@ -262,7 +263,7 @@ process. There is no screen; the agent is the interface.
 }
 ```
 
-**Wallet** (`kangoh-mcp`): the customer's agent holds the vouchers. The
+**Wallet** (`kangoh-mcp`): an AI agent holds the vouchers for the customer. The
 wallet is a file holding the key and the vouchers (`KANGOH_WALLET`, default
 `~/.kangoh/wallet.json`); no store ever sees it.
 
