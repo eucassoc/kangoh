@@ -4,9 +4,12 @@
 // against its sales, or in advance with the QR it printed.
 //
 // A receipt is claimed once. The first claim for a store, day and number
-// wins; later ones are refused as duplicates and the refusal is recorded,
-// so that the customer can see why. A customer who really made the purchase
-// takes the receipt to the store, which issues at the counter instead.
+// goes to the store; later ones wait as duplicates. If the store rejects the
+// first (a stranger who guessed a receipt number cannot know its total), the
+// earliest duplicate takes its place. Once the first is issued, the others
+// are rejected. Every step is recorded, so that a customer can see why. A
+// customer who really made the purchase and was refused takes the receipt to
+// the store, which issues at the counter instead.
 //
 // Two files:
 //   state   the events, private to the operator: receipts in the clear,
@@ -37,10 +40,12 @@ export interface ReceiptClaim {
   /**
    * `pending`: waits for the store's daily review. `authorized`: came with
    * the store's signed QR, issued at the store's next sync without review.
-   * `duplicate`: refused, the receipt was claimed first by `duplicateOf`.
+   * `duplicate`: the receipt was claimed first by `duplicateOf`; this one
+   * takes its place if the store rejects that one, and is rejected if the
+   * store issues it.
    */
   status: ClaimStatus;
-  /** The key the voucher is to be bound to; a fresh one per claim. Absent on duplicates. */
+  /** The key the voucher is to be bound to; a fresh one per claim. */
   holder?: JWK;
   /** The points the claim is for: what the total earns, or what the signed QR says. */
   value: number;
@@ -78,7 +83,8 @@ export interface ReceiptDeskOptions {
 type Event =
   | { ev: 'submitted'; at: string; claim: ReceiptClaim }
   | { ev: 'issued'; at: string; id: string; voucher: string; value: number }
-  | { ev: 'rejected'; at: string; id: string; reason: string };
+  | { ev: 'rejected'; at: string; id: string; reason: string }
+  | { ev: 'promoted'; at: string; id: string; replaces: string };
 
 export class ReceiptDesk {
   private readonly claims = new Map<string, ReceiptClaim>();
@@ -119,7 +125,12 @@ export class ReceiptDesk {
     let signed = false;
     try {
       if (input.token) {
-        ({ receipt, value } = await verifyReceipt(this.program, input.token));
+        let signedAt: Date;
+        ({ receipt, value, signedAt } = await verifyReceipt(this.program, input.token));
+        const minutes = this.program.qrMinutes;
+        if (minutes !== undefined && this.now().getTime() - signedAt.getTime() > minutes * 60_000) {
+          throw new DeskError(422, `the receipt QR could be used for ${minutes} minutes after it was shown, and that has passed`);
+        }
         signed = true;
       } else {
         receipt = checkReceipt(input.receipt ?? {});
@@ -139,10 +150,14 @@ export class ReceiptDesk {
     const first = this.firstByReceipt.get(receiptKey(receipt));
     if (first) {
       const prior = this.claims.get(first) as ReceiptClaim;
-      delete claim.holder;
-      claim.status = 'duplicate';
       claim.duplicateOf = first;
-      claim.reason = `the receipt was claimed first at ${prior.submitted}`;
+      if (prior.status === 'issued') {
+        claim.status = 'rejected';
+        claim.reason = `the receipt was claimed first at ${prior.submitted}, and the points went to that claim`;
+      } else {
+        claim.status = 'duplicate';
+        claim.reason = `the receipt was claimed first at ${prior.submitted}; this claim takes its place if the store rejects that one`;
+      }
     }
     await this.record({ ev: 'submitted', at, claim });
     return { ...claim };
@@ -169,7 +184,12 @@ export class ReceiptDesk {
     }
     if (claims.iss !== store) throw new DeskError(422, `the voucher is signed by ${claims.iss}, not ${store}`);
     if (claims.cnf.jwk.x !== c.holder?.x) throw new DeskError(422, "the voucher is not bound to the claim's key");
-    await this.record({ ev: 'issued', at: this.now().toISOString(), id, voucher, value: claims.value });
+    const at = this.now().toISOString();
+    await this.record({ ev: 'issued', at, id, voucher, value: claims.value });
+    // The receipt is spent: the claims waiting behind this one are rejected.
+    for (const d of this.waitingBehind(id)) {
+      await this.record({ ev: 'rejected', at, id: d.id, reason: `the receipt was claimed first at ${c.submitted}, and the points went to that claim` });
+    }
     return this.get(id) as ReceiptClaim;
   }
 
@@ -178,8 +198,18 @@ export class ReceiptDesk {
     this.open(store, id);
     const r = reason.trim().slice(0, 200);
     if (!r) throw new DeskError(400, 'a reason is required');
-    await this.record({ ev: 'rejected', at: this.now().toISOString(), id, reason: r });
+    const at = this.now().toISOString();
+    await this.record({ ev: 'rejected', at, id, reason: r });
+    // The receipt is not spent: the earliest claim waiting behind this one
+    // takes its place, so that guessing receipt numbers blocks nobody.
+    const [next] = this.waitingBehind(id);
+    if (next) await this.record({ ev: 'promoted', at, id: next.id, replaces: id });
     return this.get(id) as ReceiptClaim;
+  }
+
+  /** The duplicates waiting behind a claim, oldest first. */
+  private waitingBehind(id: string): ReceiptClaim[] {
+    return [...this.claims.values()].filter((c) => c.status === 'duplicate' && c.duplicateOf === id);
   }
 
   /** The HMAC under which a receipt appears in the public chain. */
@@ -208,7 +238,7 @@ export class ReceiptDesk {
       case 'submitted': {
         this.claims.set(e.claim.id, { ...e.claim });
         const key = receiptKey(e.claim.receipt);
-        if (e.claim.status !== 'duplicate' && !this.firstByReceipt.has(key)) this.firstByReceipt.set(key, e.claim.id);
+        if (!e.claim.duplicateOf && !this.firstByReceipt.has(key)) this.firstByReceipt.set(key, e.claim.id);
         break;
       }
       case 'issued': {
@@ -221,6 +251,16 @@ export class ReceiptDesk {
         if (c) Object.assign(c, { status: 'rejected', reason: e.reason, decided: e.at });
         break;
       }
+      case 'promoted': {
+        const c = this.claims.get(e.id);
+        if (!c) break;
+        c.status = c.signed ? 'authorized' : 'pending';
+        delete c.duplicateOf;
+        delete c.reason;
+        this.firstByReceipt.set(receiptKey(c.receipt), c.id);
+        for (const d of this.claims.values()) if (d.status === 'duplicate' && d.duplicateOf === e.replaces) d.duplicateOf = c.id;
+        break;
+      }
     }
   }
 
@@ -230,6 +270,7 @@ export class ReceiptDesk {
     const line = JSON.stringify(e);
     if (this.opts.state) await appendFile(this.opts.state, line + '\n');
     const c = this.claims.get(e.ev === 'submitted' ? e.claim.id : e.id) as ReceiptClaim;
+    // Reasons in the public chain are the desk's own wording, which quotes no receipt.
     // The public outcome: which claim, whose receipt (keyed), what became of
     // it. A store's reason for a rejection is free text and may quote the
     // receipt, so it stays in the state, where the claimant reads it.
@@ -238,6 +279,7 @@ export class ReceiptDesk {
       meta.duplicate_of = c.duplicateOf;
       if (c.reason) meta.reason = c.reason;
     }
+    if (e.ev === 'promoted') meta.replaces = e.replaces;
     const record = {
       spec: 'deedlog/v0.1',
       chain: `${this.program.name}/receipts`,

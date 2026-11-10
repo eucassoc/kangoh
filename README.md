@@ -169,6 +169,7 @@ the purchase and the store still signs the voucher:
   "earn": { "per": 100, "points": 1, "max": 500 },
   "validDays": 180,
   "receiptDays": 7,
+  "qrMinutes": 10,
   "service": "https://points.arcade.example",
   "operator": { "id": "operator.arcade.example", "key": { "...": "..." } },
   "stores": [
@@ -181,8 +182,11 @@ the purchase and the store still signs the voucher:
 1. **The customer claims.** The app reads the receipt (store, time, number,
    total) and leaves a claim at the operator's receipt desk with a fresh key,
    so that no two claims can be linked. A receipt is claimed once: the first
-   claim for a store, day and number wins, and a later one is refused as a
-   duplicate on the spot.
+   claim for a store, day and number goes to the store, and later ones wait
+   behind it as duplicates. If the store rejects the first, the earliest
+   duplicate takes its place, so a stranger who claims guessed receipt
+   numbers with made-up totals blocks nobody. Once the first is issued, the
+   others are rejected.
 2. **The store reviews once a day.** It lists the day's claims, duplicates
    first as errors, compares the rest with its sales, and approves: each
    voucher is signed with the store's key to the claim's key and recorded,
@@ -191,14 +195,18 @@ the purchase and the store still signs the voucher:
 3. **Or nothing to review.** A store whose point of sale prints a signed QR
    on each receipt (`"receipts": "signed"`) approved the voucher when it
    printed it. Claims made with the QR are issued at the store's next sync,
-   and claims typed from its receipts are refused.
+   and claims typed from its receipts are refused. Whoever scans a QR first
+   gets the points, as with any paper voucher, so show it on the till's
+   customer display rather than printing it where it can be photographed,
+   and set `qrMinutes` to how long it is shown.
 4. **The customer collects** the voucher from the desk, and spends it at any
    store in the program as before. Settlement is unchanged and pays by value.
 
 The store that signs a voucher pays it, so a store gains nothing by
-approving claims that are not its sales. A customer whose claim was refused
-as a duplicate but who has the receipt goes to the store, which issues at
-the counter (`issue_voucher` with a value).
+approving claims that are not its sales. A receipt is evidence of a
+purchase, not of who made it: someone who photographs a receipt can claim it
+first. A customer whose claim was refused but who has the receipt goes to
+the store, which issues at the counter (`issue_voucher` with a value).
 
 The desk runs in the operator's service, beside the registry:
 

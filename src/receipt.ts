@@ -73,9 +73,9 @@ export async function signReceipt(program: Program, issuer: Issuer, receipt: Omi
 }
 
 /** Verifies a receipt QR against the program: signed by a member, for this program. */
-export async function verifyReceipt(program: Program, token: string): Promise<{ receipt: Receipt; value: number }> {
+export async function verifyReceipt(program: Program, token: string): Promise<{ receipt: Receipt; value: number; signedAt: Date }> {
   let header;
-  let c: { iss?: string; program?: string; rcpt?: Partial<Receipt>; value?: number };
+  let c: { iss?: string; program?: string; rcpt?: Partial<Receipt>; value?: number; iat?: number };
   try {
     header = decodeProtectedHeader(token);
     c = decodeJwt(token);
@@ -92,7 +92,8 @@ export async function verifyReceipt(program: Program, token: string): Promise<{ 
   }
   if (c.program !== program.name) throw new VoucherError('program', 'the receipt QR is for another program');
   if (!Number.isInteger(c.value) || (c.value as number) <= 0) throw new VoucherError('format', 'the receipt QR has no value');
-  return { receipt: checkReceipt({ ...(c.rcpt ?? {}), store: m.id }), value: c.value as number };
+  if (typeof c.iat !== 'number') throw new VoucherError('format', 'the receipt QR has no time of signing');
+  return { receipt: checkReceipt({ ...(c.rcpt ?? {}), store: m.id }), value: c.value as number, signedAt: new Date(c.iat * 1000) };
 }
 
 /** What a printed QR contains: the token, as a link to the operator's service when the program names one. */

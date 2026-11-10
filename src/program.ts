@@ -16,6 +16,12 @@ export interface Program {
   validDays: number;
   /** Days after the purchase within which a receipt can be claimed. 7 when not given. */
   receiptDays?: number;
+  /**
+   * Minutes a signed receipt QR can be claimed after it was printed or
+   * shown. Short when the QR is shown on the till's customer display, so
+   * that only the customer in front of it can use it.
+   */
+  qrMinutes?: number;
   /** Base URL of the operator's service: the registry and the receipt desk. */
   service?: string;
   /** Verifiable credential type (`vct`) of the vouchers. */
@@ -90,6 +96,7 @@ export function parseProgram(json: string): Program {
   if (p.value === undefined && p.earn === undefined) throw new Error('program: value or earn is required');
   if (!positive(p.validDays)) throw new Error('program: validDays must be a positive integer');
   if (p.receiptDays !== undefined && !positive(p.receiptDays)) throw new Error('program: receiptDays must be a positive integer');
+  if (p.qrMinutes !== undefined && !positive(p.qrMinutes)) throw new Error('program: qrMinutes must be a positive integer');
   if (p.service !== undefined && (typeof p.service !== 'string' || !/^https?:\/\//.test(p.service))) throw new Error('program: service must be an http(s) URL');
   if (!Array.isArray(p.stores) || p.stores.length === 0) throw new Error('program: stores is required');
   if (p.operator !== undefined) {

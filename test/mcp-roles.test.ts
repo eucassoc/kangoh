@@ -142,7 +142,8 @@ test('receipts through the MCP servers: the agent claims, the store reviews and 
     assert.equal(c.value, 12);
     const dup = await call(wallet, 'claim_receipt', printed);
     assert.equal(dup.status, 'duplicate');
-    assert.deepEqual(((await call(wallet, 'check_claims')).claims as { status: string }[]).map((x) => x.status), ['pending']);
+    // The duplicate is kept: it would take the first claim's place if the bakery rejected that one.
+    assert.deepEqual(((await call(wallet, 'check_claims')).claims as { status: string }[]).map((x) => x.status), ['pending', 'duplicate']);
 
     const listed = (await call(bakery, 'receipts')).claims as { status: string }[];
     assert.deepEqual(listed.map((x) => x.status), ['duplicate', 'pending']);
@@ -157,7 +158,8 @@ test('receipts through the MCP servers: the agent claims, the store reviews and 
     assert.deepEqual(((await call(cafe, 'sync_receipts')).results as { value: number }[]).map((x) => x.value), [5]);
 
     const checked = (await call(wallet, 'check_claims')).claims as { status: string; value: number }[];
-    assert.deepEqual(checked.map((x) => [x.status, x.value]).sort(), [['issued', 12], ['issued', 5]].sort());
+    // The first claim got the points; the duplicate behind it is closed.
+    assert.deepEqual(checked.map((x) => [x.status, x.value]).sort(), [['issued', 12], ['rejected', 12], ['issued', 5]].sort());
     const held = await call(wallet, 'list_vouchers');
     assert.equal(held.total, 17);
 

@@ -198,7 +198,7 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
     {
       title: 'Claim points with a receipt',
       description:
-        "Claim the points for a purchase with its receipt. Give the receipt's QR code if it has one (the store's signed approval; points arrive without review), or the store, time, number and total as printed, with the program (JSON), whose operator's service takes the claim; the store confirms printed receipts against its sales once a day. The claim is bound to a fresh key, so claims cannot be linked to each other. A receipt is claimed once: if someone claimed it first, the claim is refused as a duplicate, and the customer should take the receipt to the store. Then call check_claims later to collect the points.",
+        "Claim the points for a purchase with its receipt. Give the receipt's QR code if it has one (the store's signed approval; points arrive without review), or the store, time, number and total as printed, with the program (JSON), whose operator's service takes the claim; the store confirms printed receipts against its sales once a day. The claim is bound to a fresh key, so claims cannot be linked to each other. A receipt is claimed once: if someone claimed it first, this claim waits as a duplicate and takes the first one's place if the store rejects it (a stranger who guessed the number cannot know the total); if the store issues the first, this one is rejected and the customer should take the receipt to the store. Then call check_claims later to collect the points.",
       inputSchema: {
         qr: z.string().optional().describe('The text of the QR code printed on the receipt'),
         program: z.string().optional().describe('The published program, as JSON; required for a printed receipt, and for a QR that is not a link'),
@@ -225,7 +225,8 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
       const w = await load();
       const key = await generateKey();
       const c = await new DeskClient(service).submit({ ...body, holder: key.publicJwk });
-      if (c.status !== 'duplicate') {
+      // A duplicate is kept too: it takes the first claim's place if the store rejects that one.
+      if (c.status !== 'rejected') {
         w.keys = [...(w.keys ?? []), key];
         w.pending = [...(w.pending ?? []), { id: c.id, service, store: c.store, receipt: { at: c.receipt.at, number: c.receipt.number, total: c.receipt.total }, value: c.value, submitted: c.submitted, kid: key.kid }];
         await saveWalletFile(path, w);
@@ -267,7 +268,7 @@ export function walletServer(path: string, now: () => Date = () => new Date()): 
           }
           if (!w.vouchers.some((v) => v === c.voucher)) w.vouchers.push(c.voucher);
           out.push({ id: p.id, store: p.store, status: 'issued', value: c.value });
-        } else if (c.status === 'rejected' || c.status === 'duplicate') {
+        } else if (c.status === 'rejected') {
           w.keys = (w.keys ?? []).filter((k) => k.kid !== p.kid);
           out.push({ id: p.id, store: p.store, status: c.status, value: c.value, ...(c.reason ? { reason: c.reason } : {}) });
         } else {

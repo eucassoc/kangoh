@@ -126,12 +126,15 @@ test('a receipt is claimed once: the first claim wins, a later one is refused an
     );
     const answers = await approveReceipts(s.store('bakery.example'), s.client);
     assert.deepEqual(answers.map((a) => a.status).sort(), ['issued', 'issued']);
-    assert.equal((await s.client.status(again.id)).status, 'duplicate');
+    // The first claim got the points, so the one waiting behind it is closed.
+    const closed = await s.client.status(again.id);
+    assert.equal(closed.status, 'rejected');
+    assert.match(closed.reason ?? '', /points went to that claim/);
 
     // The public chain: one record per outcome, linked, with an HMAC of the receipt and no totals or keys.
     const lines = (await readFile(join(dir, 'receipts.chain.jsonl'), 'utf8')).split('\n').filter(Boolean);
     const records = lines.map((l) => JSON.parse(l));
-    assert.equal(records.length, 5);
+    assert.equal(records.length, 6);
     records.forEach((r, i) => {
       assert.equal(r.spec, 'deedlog/v0.1');
       assert.equal(r.seq, i);
@@ -151,9 +154,9 @@ test('a receipt is claimed once: the first claim wins, a later one is refused an
     await desk.load();
     assert.equal(desk.size, 3);
     const third = await desk.submit({ receipt: receipt('bakery.example', 'R01-0042', 1850), holder: (await generateKey()).publicJwk });
-    assert.equal(third.status, 'duplicate');
+    assert.equal(third.status, 'rejected');
     const after = (await readFile(join(dir, 'receipts.chain.jsonl'), 'utf8')).split('\n').filter(Boolean);
-    assert.equal(JSON.parse(after[5] as string).prev, 'sha256:' + sha256(lines[4] as string));
+    assert.equal(JSON.parse(after[lines.length] as string).prev, 'sha256:' + sha256(lines[lines.length - 1] as string));
   } finally {
     await s.close();
   }
@@ -181,9 +184,9 @@ test('a signed receipt QR: issued at the store\'s next sync without review; prin
     assert.deepEqual(await syncReceipts(cafe, s.client), []);
     assert.ok((await s.client.status(c.id)).voucher);
 
-    // The same QR again is a duplicate.
+    // The same QR again, after its points were issued, is refused at once.
     const again = await s.client.submit({ token: parsed.token, holder: (await generateKey()).publicJwk });
-    assert.equal(again.status, 'duplicate');
+    assert.equal(again.status, 'rejected');
     // The café prints QRs, so a claim typed from its receipt is refused.
     await assert.rejects(s.client.submit({ receipt: receipt('cafe.example', '0008', 640), holder: key.publicJwk }), /scan the QR/);
     // A QR signed by another key is refused.
@@ -267,4 +270,49 @@ test('points earned from a total, and the vouchers a program allows', async () =
   const k = await generateKey();
   const fixed: Program = { name: 'fixed', value: 100, validDays: 7, stores: [{ id: 'a', key: k.publicJwk }] };
   await assert.rejects(issueVoucher(fixed, { id: 'a', privateJwk: k.privateJwk }, k.publicJwk, new Date(), 5), /does not fit/);
+});
+
+test('guessing receipt numbers blocks nobody: when the store rejects the first claim, the next one takes its place', async () => {
+  const s = await street();
+  try {
+    const bakery = s.store('bakery.example');
+    // A stranger claims today's numbers with made-up totals before the customers do.
+    const guess = await s.client.submit({ receipt: receipt('bakery.example', '0042', 999), holder: (await generateKey()).publicJwk });
+    const key = await generateKey();
+    const real = await s.client.submit({ receipt: receipt('bakery.example', '0042', 1850), holder: key.publicJwk });
+    const late = await s.client.submit({ receipt: receipt('bakery.example', '0042', 1850), holder: (await generateKey()).publicJwk });
+    assert.deepEqual([guess.status, real.status, late.status], ['pending', 'duplicate', 'duplicate']);
+
+    // The store finds no 999 sale for that number and rejects it; the real claim moves up.
+    await rejectReceipt(bakery, s.client, guess.id, 'the total does not match');
+    const moved = await s.client.status(real.id);
+    assert.equal(moved.status, 'pending');
+    assert.equal(moved.reason, undefined);
+    const waiting = (await storeClaims(bakery, s.client)).filter((c) => c.status === 'pending');
+    assert.deepEqual(waiting.map((c) => c.id), [real.id]);
+
+    // Approved: the customer gets the points, and the later claim is closed.
+    await approveReceipts(bakery, s.client);
+    assert.equal((await s.client.status(real.id)).status, 'issued');
+    assert.equal((await s.client.status(late.id)).status, 'rejected');
+    assert.equal((await s.client.status(guess.id)).status, 'rejected');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a signed receipt QR can be used only for the minutes the program allows', async () => {
+  const s = await street();
+  try {
+    s.program.qrMinutes = 10;
+    const cafe = s.store('cafe.example');
+    const fresh = await cafe.signReceipt({ at: '2026-04-01T09:00', number: '1', total: 500 });
+    const stale = await cafe.signReceipt({ at: '2026-04-01T09:00', number: '2', total: 500 });
+    s.clock.advance(5 * 60_000);
+    assert.equal((await s.client.submit({ token: fresh, holder: (await generateKey()).publicJwk })).status, 'authorized');
+    s.clock.advance(6 * 60_000);
+    await assert.rejects(s.client.submit({ token: stale, holder: (await generateKey()).publicJwk }), /10 minutes/);
+  } finally {
+    await s.close();
+  }
 });
