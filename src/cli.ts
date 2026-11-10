@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // kangoh: reward vouchers as verifiable credentials.
 //
-//   kangoh keygen                                   a key pair, as JSON
+//   kangoh keygen [-o key.json]                     a key pair, as JSON, readable by its owner only
 //   kangoh issue -p program.json -k store.json -h holder.json [--value N]
 //   kangoh present -k holder.json --aud STORE --nonce N [voucher]
 //   kangoh verify -p program.json --aud STORE [--nonce N] [presentation]
@@ -25,7 +25,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { generateKey, toPublic } from './keys.js';
-import { parseProgram, type Program } from './program.js';
+import { parseProgram } from './program.js';
 import { present, verifyPresentation } from './presentation.js';
 import { formatFinding, settle } from './settlement.js';
 import type { Claim } from './store.js';
@@ -35,6 +35,7 @@ import { ReceiptDesk } from './desk.js';
 import { approveReceipts, DeskClient, rejectReceipt, storeClaims, syncReceipts, type Answered } from './deskClient.js';
 import { receiptQr, signReceipt } from './receipt.js';
 import { openStore, storeDir } from './storeDir.js';
+import { writeSecret } from './secret.js';
 
 async function read(path: string | undefined): Promise<string> {
   const buf = path && path !== '-' ? await readFile(path) : await readStdin();
@@ -51,8 +52,9 @@ async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case 'keygen': {
+      const { values } = parseArgs({ args: rest, options: { out: { type: 'string', short: 'o' } } });
       const k = await generateKey();
-      console.log(JSON.stringify(k.privateJwk));
+      writeSecret(JSON.stringify(k.privateJwk), values.out);
       return 0;
     }
     case 'issue': {

@@ -216,7 +216,7 @@ KANGOH_DESK_SECRET=... kangoh registry -p program.json --state receipts.jsonl --
 ## コマンドライン
 
 ```sh
-kangoh keygen > bakery.json                                # 鍵ペア(秘密に保管し、公開側をプログラムに載せる)
+kangoh keygen -o bakery.json                               # 鍵ペア。所有者だけが読める(公開側をプログラムに載せる)
 kangoh issue -p program.json -k bakery.json -h agent.json  # バウチャーを標準出力へ
 kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt

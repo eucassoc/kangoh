@@ -233,7 +233,7 @@ has not been changed.
 ## Command line
 
 ```sh
-kangoh keygen > bakery.json                                # a key pair (keep it private; put its public half in the program)
+kangoh keygen -o bakery.json                               # a key pair, readable by you only (put its public half in the program)
 kangoh issue -p program.json -k bakery.json -h agent.json  # a voucher, to standard output
 kangoh present -k agent.json --aud cafe.example --nonce N voucher.txt
 kangoh verify -p program.json --aud cafe.example --nonce N presentation.txt
