@@ -1,6 +1,6 @@
 {
   "name": "kangoh",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Reward vouchers as verifiable credentials: issued by stores after a purchase or from a receipt, accepted across a program and settled between stores, with no customer database.",
   "license": "Apache-2.0",
   "repository": "github:eucassoc/kangoh",
