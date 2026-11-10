@@ -299,6 +299,12 @@ The directory is the store's whole state.
 |---|---|
 | `settle` | Settle a period from the program and the stores' claims, given as JSON or file paths: statements per store and findings for every redemption not paid |
 
+## Related
+
+[shinten](https://shinten.dev/en/) keeps delivery addresses and enquiries
+encrypted on every server, decrypted only where the work is done: a sister
+project built on the same idea of holding nothing.
+
 ## Development
 
 ```sh
