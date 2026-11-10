@@ -106,10 +106,16 @@ const { findings, statements } = await settle(program, programJson, [await baker
 情報も持ちません。
 
 ```sh
-kangoh registry --port 8788 --file claims.jsonl --token SECRET   # 運営者が動かす
+kangoh registry -p program.json --port 8788 --file claims.jsonl   # 運営者が動かす
 ```
 
-店舗は `store.json` に `"registry": {"url": "https://...", "token": "SECRET"}` と
+店舗が使用済みにできるのは、お客さまがその店舗に提示したバウチャーだけです。
+問い合わせには、お客さまがその店舗あてに署名した提示と、店舗が自分の鍵で署名した
+短時間だけ有効なトークンが付き、照合サービスはどちらもプログラムに照らして
+確かめます。提示されていないバウチャーは誰も使用済みにできず、発行した店舗が
+自分のバウチャーを使用済みにして他店で使えなくし、支払いを逃れることもできません。
+
+店舗は `store.json` に `"registry": {"url": "https://..."}` と
 書くか、`StoreOptions.registry` で指定します。照合サービスに届かないときは
 受け取って精算に委ね、`"required": true` なら断ります。照合サービスは記録の
 上に載る便宜であって代替ではなく、精算は変わらず全店舗の記録を突き合わせます。
@@ -130,7 +136,7 @@ kangoh registry --port 8788 --file claims.jsonl --token SECRET   # 運営者が�
 照合サービスから取り寄せます。店舗の作業は増えません。
 
 ```sh
-kangoh registry --program program.json --key operator.json   # 運営者の鍵でお釣りを発行する照合サービス
+kangoh registry -p program.json --key operator.json   # 運営者の鍵でお釣りを発行する照合サービス
 ```
 
 お釣りは店舗のバウチャーを分けるだけで、ポイントを生み出しません。元の
@@ -181,7 +187,7 @@ kangoh registry --program program.json --key operator.json   # 運営者の鍵�
 窓口は運営者のサービスの中で、照合サービスと並んで動きます。
 
 ```sh
-KANGOH_DESK_SECRET=... kangoh registry --program program.json --state receipts.jsonl --chain receipts.chain.jsonl
+KANGOH_DESK_SECRET=... kangoh registry -p program.json --state receipts.jsonl --chain receipts.chain.jsonl
 ```
 
 窓口は何にも署名せず、誰の情報も持ちません。`receipts.jsonl` にあるのは

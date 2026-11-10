@@ -118,7 +118,7 @@ test('receipts through the MCP servers: the agent claims, the store reviews and 
     ],
   };
   const desk = new ReceiptDesk({ program, secret: 's' });
-  const server = registryServer({ registry: new Registry(undefined, undefined, { program, key: operator.privateJwk }), desk });
+  const server = registryServer({ registry: new Registry({ program, changeKey: operator.privateJwk }), desk });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   program.service = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const dirs: Record<string, string> = {};

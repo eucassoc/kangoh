@@ -9,11 +9,15 @@ import { Registry, registryServer } from '../src/registry.js';
 import { settle } from '../src/settlement.js';
 import { Store } from '../src/store.js';
 import { DAY, fixture, wallet } from './program.test.js';
+import { sha256 } from '../src/digest.js';
+import { generateKey } from '../src/keys.js';
+import type { Program } from '../src/program.js';
+import { storeToken } from '../src/receipt.js';
 
-async function start(file?: string, token?: string) {
-  const registry = new Registry(file);
+async function start(program: Program, file?: string, now?: () => Date) {
+  const registry = new Registry({ program, ...(file ? { file } : {}), ...(now ? { now } : {}) });
   await registry.load();
-  const server = registryServer({ registry, ...(token ? { token } : {}) });
+  const server = registryServer({ registry });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return { registry, server, url, close: () => new Promise<void>((r) => server.close(() => r())) };
@@ -22,9 +26,9 @@ async function start(file?: string, token?: string) {
 test('with a registry, a voucher spent at one store is refused at the next, at the counter', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'kangoh-registry-'));
   const file = join(dir, 'claims.jsonl');
-  const reg = await start(file, 'secret');
+  const f = await fixture();
+  const reg = await start(f.program, file, f.clock.now);
   try {
-    const f = await fixture();
     const stores = f.stores.map(
       (s) =>
         new Store({
@@ -34,7 +38,7 @@ test('with a registry, a voucher spent at one store is refused at the next, at t
           programJson: f.programJson,
           recorder: new MemoryRecorder(),
           now: f.clock.now,
-          registry: { url: reg.url, token: 'secret' },
+          registry: { url: reg.url },
         }),
     );
     for (const s of stores) await s.join();
@@ -53,11 +57,13 @@ test('with a registry, a voucher spent at one store is refused at the next, at t
     assert.doesNotMatch(text, new RegExp(a.publicJwk.x as string));
     assert.match(text, /"store":"cafe.example"/);
     await reg.close();
-    const again = await start(file, 'secret');
+    const again = await start(f.program, file, f.clock.now);
     try {
       assert.equal(again.registry.size, 1);
-      await assert.rejects(again.registry.claim(JSON.parse(text).voucher, 'bookshop.example'), /already redeemed at cafe.example/);
-      assert.equal((await again.registry.claim(JSON.parse(text).voucher, 'cafe.example')).claimed, false);
+      const toBookshop = await a.present(v, 'bookshop.example', 'n', f.clock.now());
+      await assert.rejects(again.registry.claim('bookshop.example', toBookshop), /already redeemed at cafe.example/);
+      const toCafe = await a.present(v, 'cafe.example', 'n2', f.clock.now());
+      assert.equal((await again.registry.claim('cafe.example', toCafe)).claimed, false);
     } finally {
       await again.close();
     }
@@ -66,20 +72,38 @@ test('with a registry, a voucher spent at one store is refused at the next, at t
   }
 });
 
-test('the registry refuses callers without the token, and answers spent lookups', async () => {
-  const reg = await start(undefined, 'secret');
+test('only a store, with its own key, can claim, and only a voucher presented to it', async () => {
+  const f = await fixture();
+  const reg = await start(f.program, undefined, f.clock.now);
   try {
-    const digest = 'a'.repeat(64);
-    const r = await fetch(`${reg.url}/claim`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voucher: digest, store: 'x' }) });
-    assert.equal(r.status, 401);
-    const ok = await fetch(`${reg.url}/claim`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ voucher: digest, store: 'x' }) });
+    const [bakery, cafe] = f.stores as [Store, Store];
+    const a = await wallet();
+    const v = await bakery.issue(a.publicJwk);
+    const toCafe = await a.present(v, 'cafe.example', 'n', f.clock.now());
+    const post = (body: unknown, auth?: string) =>
+      fetch(`${reg.url}/claim`, { method: 'POST', headers: { 'content-type': 'application/json', ...(auth ? { authorization: auth } : {}) }, body: JSON.stringify(body) });
+
+    // No token: refused.
+    assert.equal((await post({ presentation: toCafe })).status, 401);
+    // A token signed with a key that is not the store's: refused.
+    const forged = await storeToken('cafe.example', (await generateKey()).privateJwk, f.clock.now());
+    assert.equal((await post({ presentation: toCafe }, `Store ${forged}`)).status, 401);
+    // The issuing store cannot mark its own voucher spent to keep others from
+    // taking it: it holds no presentation of it signed for itself.
+    const bakeryToken = `Store ${await bakery.serviceToken()}`;
+    assert.equal((await post({ presentation: toCafe }, bakeryToken)).status, 400);
+    assert.equal(reg.registry.size, 0);
+    // A digest alone is no longer enough.
+    assert.equal((await post({ voucher: sha256(v), store: 'bakery.example' }, bakeryToken)).status, 400);
+    // The café, with its own token and the customer's presentation to it, can.
+    const ok = await post({ presentation: toCafe }, `Store ${await cafe.serviceToken()}`);
     assert.equal(ok.status, 200);
-    const spent = (await (await fetch(`${reg.url}/spent/${digest}`, { headers: { authorization: 'Bearer secret' } })).json()) as { spent: boolean; store: string };
-    assert.deepEqual([spent.spent, spent.store], [true, 'x']);
+    // Lookups need a store token too.
+    assert.equal((await fetch(`${reg.url}/spent/${sha256(v)}`)).status, 401);
+    const spent = (await (await fetch(`${reg.url}/spent/${sha256(v)}`, { headers: { authorization: bakeryToken } })).json()) as { spent: boolean; store: string };
+    assert.deepEqual([spent.spent, spent.store], [true, 'cafe.example']);
     const health = (await (await fetch(`${reg.url}/health`)).json()) as { claims: number };
     assert.equal(health.claims, 1);
-    const bad = await fetch(`${reg.url}/claim`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ voucher: 'nope', store: 'x' }) });
-    assert.equal(bad.status, 400);
   } finally {
     await reg.close();
   }

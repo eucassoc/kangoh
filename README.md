@@ -112,10 +112,17 @@ the digests of vouchers taken and the store that took each, and nothing
 about anyone.
 
 ```sh
-kangoh registry --port 8788 --file claims.jsonl --token SECRET   # the operator runs this
+kangoh registry -p program.json --port 8788 --file claims.jsonl   # the operator runs this
 ```
 
-A store names it in `store.json` (`"registry": {"url": "https://...", "token": "SECRET"}`)
+A store can only claim a voucher a customer presented to it. Each claim
+carries the customer's presentation, signed for that store, and a
+short-lived token the store signs with its own key; the registry checks both
+against the program. So nobody can mark a voucher spent that was not
+presented to them, and a store cannot mark the vouchers it issued as spent
+to keep other stores from taking them, and paying nothing.
+
+A store names the registry in `store.json` (`"registry": {"url": "https://..."}`)
 or in `StoreOptions.registry`. If the registry cannot be reached the store
 takes the voucher and leaves a double use to settlement; with
 `"required": true` it refuses instead. The registry is a convenience over
@@ -140,7 +147,7 @@ store hands it back; a wallet that missed it fetches it from the registry.
 The store does nothing more.
 
 ```sh
-kangoh registry --program program.json --key operator.json   # the registry, issuing change with the operator's key
+kangoh registry -p program.json --key operator.json   # the registry, issuing change with the operator's key
 ```
 
 Change only splits a store's voucher; it never makes points. The store
@@ -196,7 +203,7 @@ the counter (`issue_voucher` with a value).
 The desk runs in the operator's service, beside the registry:
 
 ```sh
-KANGOH_DESK_SECRET=... kangoh registry --program program.json --state receipts.jsonl --chain receipts.chain.jsonl
+KANGOH_DESK_SECRET=... kangoh registry -p program.json --state receipts.jsonl --chain receipts.chain.jsonl
 ```
 
 It signs nothing and keeps nothing about anyone: receipts, the claims' keys

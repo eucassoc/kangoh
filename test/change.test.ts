@@ -29,7 +29,7 @@ async function street(opts: { registry?: boolean; change?: boolean } = { registr
     stores: ids.map((id) => ({ id, key: (keys.get(id) as KeyPair).publicJwk })),
   };
   const programJson = JSON.stringify(program);
-  const registry = new Registry(undefined, clock.now, opts.change === false ? undefined : { program, key: operator.privateJwk });
+  const registry = new Registry({ program, now: clock.now, ...(opts.change === false ? {} : { changeKey: operator.privateJwk }) });
   const server = registryServer({ registry });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -110,7 +110,8 @@ test('part of a voucher: the store takes it, the operator issues the rest as cha
     assert.equal(by('bookshop.example')?.receives, 4);
 
     // The registry answers a retry from the same store with the same change.
-    const again = await s.registry.claim(sha256(v18), 'cafe.example');
+    const retry = await w.present(v18, 'cafe.example', 'retry', s.clock.now(), { amount: 9, change: k1.publicJwk });
+    const again = await s.registry.claim('cafe.example', retry);
     assert.equal(again.change, change);
   } finally {
     await s.close();

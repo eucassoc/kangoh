@@ -162,7 +162,7 @@ export class Store {
     if (partial && !this.registry) throw new VoucherError('change', "using part of a voucher needs the operator's registry, which issues the change; use the whole voucher");
     // Ask the operator's registry before taking it, so that a voucher spent
     // at another store is refused at the counter.
-    const answer = this.registry ? await this.registry.claim(voucherDigest, this.id, partial ? presentation : undefined) : undefined;
+    const answer = this.registry ? await this.registry.claim(presentation, await this.serviceToken(), partial) : undefined;
     if (partial && !answer?.change) throw new VoucherError('change', 'the registry issued no change; use the whole voucher');
     taken.add(voucherDigest);
     const digest = sha256(presentation);

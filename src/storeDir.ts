@@ -10,7 +10,7 @@ import { Store, type PresentationStore } from './store.js';
  * A store's directory: `store.json` ({id, privateJwk, registry?}),
  * `program.json` (the program as published), `records.jsonl` (what the store
  * did) and `presentations.jsonl` (the vouchers it took, its claim). The
- * directory is `KANGOH_STORE`. `registry` is {url, token?, required?}: the
+ * directory is `KANGOH_STORE`. `registry` is {url, required?}: the
  * operator's registry to ask before taking a voucher.
  */
 export function storeDir(env: NodeJS.ProcessEnv = process.env): string {

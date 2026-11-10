@@ -6,8 +6,8 @@
 //   kangoh present -k holder.json --aud STORE --nonce N [voucher]
 //   kangoh verify -p program.json --aud STORE [--nonce N] [presentation]
 //   kangoh settle -p program.json claim.json...
-//   kangoh registry [--port 8788] [--file claims.jsonl] [--token SECRET]
-//                   [--program program.json [--key operator.json] [--state receipts.jsonl] [--chain receipts.chain.jsonl]]
+//   kangoh registry -p program.json [--port 8788] [--file claims.jsonl] [--key operator.json]
+//                   [--state receipts.jsonl] [--chain receipts.chain.jsonl]
 //                                                   the operator's service; with a program that earns
 //                                                   from receipts, also the receipt desk (HMAC key in
 //                                                   KANGOH_DESK_SECRET), and
@@ -178,27 +178,25 @@ async function main(argv: string[]): Promise<number> {
         options: {
           port: { type: 'string', default: '8788' },
           file: { type: 'string', default: 'claims.jsonl' },
-          token: { type: 'string' },
-          program: { type: 'string' },
+          program: { type: 'string', short: 'p' },
           key: { type: 'string' },
           state: { type: 'string', default: 'receipts.jsonl' },
           chain: { type: 'string', default: 'receipts.chain.jsonl' },
         },
       });
-      const program = values.program ? parseProgram(await read(values.program)) : undefined;
-      if (values.key && !program) throw new Error('--key needs --program: change is issued under a program');
+      // The program says which stores may claim, and with which keys they sign.
+      const program = parseProgram(await read(need(values.program, '--program')));
       const key = values.key ? JSON.parse(await read(values.key)) : undefined;
-      if (key && program?.operator?.key.x !== key.x) throw new Error("the key is not the operator's key in the program");
-      const registry = new Registry(values.file, undefined, program && key ? { program, key } : undefined);
+      const registry = new Registry({ program, file: values.file, ...(key ? { changeKey: key } : {}) });
       await registry.load();
       let desk: ReceiptDesk | undefined;
-      if (program?.earn) {
+      if (program.earn) {
         const secret = process.env.KANGOH_DESK_SECRET;
         if (!secret) throw new Error('KANGOH_DESK_SECRET must hold the key the public chain hashes receipts with');
-        desk = new ReceiptDesk({ program: program as Program, secret, state: values.state, chain: values.chain });
+        desk = new ReceiptDesk({ program, secret, state: values.state, chain: values.chain });
         await desk.load();
       }
-      const server = registryServer({ registry, ...(values.token ? { token: values.token } : {}), ...(desk ? { desk } : {}) });
+      const server = registryServer({ registry, ...(desk ? { desk } : {}) });
       await new Promise<void>((resolve) => server.listen(Number(values.port), resolve));
       console.error(`registry on port ${values.port}, ${registry.size} claims in ${values.file}`);
       if (key) console.error('issuing change with the operator key');

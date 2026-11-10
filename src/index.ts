@@ -11,7 +11,7 @@ export { settle, formatFinding, type Settlement, type Finding, type Statement } 
 export { sha256 } from './digest.js';
 export { walletServer, storeServer, operatorServer, serverFor, describe, type Held } from './mcp.js';
 export { openWalletFile, saveWalletFile, walletPath, keyFor, type WalletFile, type PendingClaim, type PendingChange } from './walletFile.js';
-export { Registry, RegistryClient, registryServer, type ChangeIssuer, type Claimed, type ClaimResult, type RegistryClientOptions, type RegistryServerOptions } from './registry.js';
+export { Registry, RegistryClient, registryServer, type RegistryOptions, type Claimed, type ClaimResult, type RegistryClientOptions, type RegistryServerOptions } from './registry.js';
 export { checkReceipt, normalizeNumber, receiptKey, signReceipt, verifyReceipt, receiptQr, parseReceiptQr, storeToken, verifyStoreToken, RECEIPT_TYP, STORE_TYP, SERVICE_AUD, type Receipt } from './receipt.js';
 export { ReceiptDesk, DeskError, claimView, type ReceiptClaim, type ClaimStatus, type ReceiptDeskOptions } from './desk.js';
 export { DeskClient, storeClaims, approveReceipts, syncReceipts, rejectReceipt, type ClaimView, type Answered } from './deskClient.js';

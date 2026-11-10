@@ -26,7 +26,6 @@ async function street(dir?: string) {
   const ids = ['bakery.example', 'cafe.example', 'bookshop.example'];
   const keys = new Map<string, KeyPair>();
   for (const id of ids) keys.set(id, await generateKey());
-  const desk0 = { registry: new Registry() };
   const program: Program = {
     name: 'arcade.example',
     value: 100,
@@ -45,7 +44,7 @@ async function street(dir?: string) {
   const files = dir ? { state: join(dir, 'receipts.jsonl'), chain: join(dir, 'receipts.chain.jsonl') } : {};
   const desk = new ReceiptDesk({ program, secret: 'desk-secret', ...files, now: clock.now });
   await desk.load();
-  const server = registryServer({ ...desk0, desk });
+  const server = registryServer({ registry: new Registry({ program, now: clock.now }), desk });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   program.service = url;
