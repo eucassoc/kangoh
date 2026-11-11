@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kangoh デモ：商店街の共通ポイント</title>
+<style>
+:root { --ink:#1d2433; --muted:#5b6475; --line:#e3e7ee; --bg:#f6f7f9; --navy:#10285a; --sky:#1e9be8; --street:#d9792b; --street-soft:#fdf3ea; --ok:#1e7d3a; --ng:#c62828; --warn:#b26a00; }
+* { box-sizing: border-box; }
+body { margin:0; font: 15px/1.7 "Noto Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif; color:var(--ink); background:var(--bg); padding-bottom: 96px; }
+.badge { position:fixed; top:10px; right:14px; z-index:50; display:flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); border-radius:999px; padding:4px 12px 4px 10px; box-shadow:0 2px 8px rgba(0,0,0,.06); font-size:11px; color:var(--muted); pointer-events:none; }
+.badge b { color:var(--navy); font-size:12px; }
+.view { display:none; min-height: calc(100vh - 96px); }
+.view.on { display:block; }
+.top { color:#fff; } .top .in { max-width:1040px; margin:0 auto; padding:0 24px; display:flex; align-items:center; gap:12px; height:56px; font-weight:700; } .top small { font-weight:400; opacity:.85; font-size:12px; }
+.top.street { background:var(--street); } .top.shop { background:#6b4a2b; } .top.op { background:var(--navy); } .top.kissa { background:#3f5a3a; } .top.tsumugi { background:#5a4a7a; }
+.split { display:grid; grid-template-columns: 1fr 300px; gap:44px; max-width:1040px; margin:22px auto 0; padding:0 24px; align-items:start; }
+.page { max-width:1040px; margin:18px auto 0; padding:0 24px; }
+.card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin:0 0 14px; }
+h1 { font-size:19px; margin:0 0 4px; } h2 { font-size:15px; margin:0 0 8px; }
+.lead { color:var(--muted); font-size:13px; margin:0 0 12px; } .note { font-size:12px; color:var(--muted); }
+.btn { display:inline-block; border:0; border-radius:8px; padding:9px 18px; font:inherit; font-weight:700; cursor:pointer; background:var(--navy); color:#fff; }
+.btn.street { background:var(--street); } .btn.green { background:var(--ok); } .btn.gray { background:#58606e; }
+table { width:100%; border-collapse:collapse; font-size:13px; } th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; background:#fafbfc; }
+tr.dup td { background:#fdeeee; color:#8a1c1c; } td.num, th.num { text-align:right; font-variant-numeric: tabular-nums; }
+.st { display:inline-block; font-size:11px; border-radius:999px; padding:0 9px; font-weight:700; } .st.pending { background:#fff4d6; color:#8a5a00; } .st.duplicate { background:#c62828; color:#fff; } .st.issued { background:#e3f3e7; color:var(--ok); } .st.rejected { background:#eee; color:#666; }
+.alert { border-radius:10px; padding:12px 16px; color:#fff; margin:12px 0 0; } .alert b { display:block; font-size:15px; } .alert.ok { background:var(--ok); } .alert.ng { background:var(--ng); } .alert.info { background:#3d4a63; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#58606e; }
+/* the receipt */
+.paper { width:300px; margin:6px auto 0; background:#fff; box-shadow:0 6px 24px rgba(0,0,0,.12); padding:22px 24px 26px; font-family: ui-monospace, Menlo, "Noto Sans Mono CJK JP", monospace; font-size:12.5px; line-height:1.65; position:relative; overflow:hidden; }
+.paper h3 { text-align:center; font-size:16px; margin:0; font-family: "Noto Sans JP", sans-serif; } .paper .c { text-align:center; } .paper .r { display:flex; justify-content:space-between; } .paper hr { border:0; border-top:1px dashed #999; margin:8px 0; } .paper .tot { font-size:16px; font-weight:700; }
+.paper .foot { margin-top:10px; font-size:11px; text-align:center; color:#555; border:1px solid #bbb; border-radius:6px; padding:4px; }
+.scanline { position:absolute; left:0; right:0; height:3px; background:rgba(30,155,232,.8); box-shadow:0 0 12px rgba(30,155,232,.9); top:-10px; }
+.scanning .scanline { animation: scan 1.2s ease-in-out 2; } @keyframes scan { 0% { top:0; } 50% { top:100%; } 100% { top:0; } }
+/* the phone */
+.phone { width:300px; height:440px; border:10px solid #1d2433; border-radius:36px; background:#f4f6fb; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,.18); }
+.ph-top { background:var(--street); color:#fff; padding:14px 16px 10px; font-weight:700; font-size:15px; } .ph-top small { display:block; font-weight:400; font-size:10.5px; opacity:.9; }
+.phone.copy .ph-top { background:#8a1c1c; }
+.ph-body { flex:1; padding:12px 14px; overflow:hidden; display:flex; flex-direction:column; gap:10px; }
+.bal { background:#fff; border-radius:14px; padding:10px 14px; text-align:center; } .bal span { display:block; font-size:11px; color:var(--muted); } .bal b { font-size:34px; line-height:1.1; color:var(--navy); } .bal i { font-style:normal; font-size:14px; margin-left:3px; color:var(--navy); }
+.items { list-style:none; margin:0; padding:0; font-size:12px; } .items li { background:#fff; border-radius:10px; padding:6px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:6px; } .items li b { font-size:14px; color:var(--navy); white-space:nowrap; } .items .sub { display:block; font-size:10.5px; color:var(--muted); }
+.items li.wait { background:#fff8e6; } .items li.wait b { color:#8a5a00; } .tagc { font-size:10px; background:#e8eefc; color:#2b4a9a; border-radius:4px; padding:0 5px; margin-left:4px; }
+.ph-msg { font-size:12px; border-radius:10px; padding:8px 10px; background:#e9f5ff; color:#11466e; display:none; } .ph-msg.on { display:block; } .ph-msg.ok { background:#e3f3e7; color:#14522a; } .ph-msg.ng { background:#fdeeee; color:#8a1c1c; }
+.ph-act { margin-top:auto; } .ph-act .btn { width:100%; background:var(--street); }
+.phone.copy .ph-act .btn { background:#8a1c1c; }
+/* displays */
+.display { background:#1d2433; color:#fff; border-radius:16px; padding:22px 26px; }
+.display .amt { font-size:28px; font-weight:700; } .display .sub { color:#c9d1e0; font-size:13px; }
+.qrbox { background:#fff; border-radius:12px; padding:10px; width:200px; height:200px; margin:14px 0 8px; } .qrbox svg { width:100%; height:100%; display:block; }
+.flow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px; } .chip { background:#eef2f8; border-radius:999px; padding:2px 10px; }
+.big { font-size:30px; font-weight:700; color:var(--navy); }
+.recs { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; } .recs .card { padding:14px 16px; margin:0; } .recs li { font-size:12px; } .recs ul { margin:0; padding-left:18px; }
+/* demo chrome */
+.bar { position:fixed; left:0; right:0; bottom:0; z-index:60; background:#1f2533; color:#cfd6e4; border-top:3px solid #f2c94c; padding:8px 14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; }
+.bar .tag { background:#f2c94c; color:#1f2533; font-weight:700; border-radius:4px; padding:1px 8px; }
+.bar button { font:inherit; font-size:12px; background:#2f3747; color:#e8ecf3; border:1px solid #485166; border-radius:6px; padding:5px 10px; cursor:pointer; }
+.bar button.hot { border-color:#e05b5b; color:#ffd2d2; }
+.caption { position:fixed; left:50%; bottom:108px; transform:translateX(-50%); z-index:70; background:rgba(22,27,38,.92); color:#fff; font-size:20px; line-height:1.5; padding:10px 22px; border-radius:10px; width:max-content; max-width: 86vw; text-align:center; opacity:0; transition:opacity .35s; letter-spacing:.02em; pointer-events:none; }
+.caption.on { opacity:1; }
+.cursor { position:fixed; z-index:80; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:rgba(242,201,76,.9); box-shadow:0 0 0 3px rgba(242,201,76,.35); pointer-events:none; transition: transform .12s; left:-40px; top:-40px; }
+.cursor.press { transform: scale(.7); }
+.hl { animation: hl 1.6s ease 2; } @keyframes hl { 0%,100% { box-shadow:none; } 50% { box-shadow:0 0 0 4px rgba(242,201,76,.8); } }
+</style>
+</head>
+<body>
+<div class="badge"><b>kangoh</b><span>デモ</span></div>
+
+<!-- 1. the receipt and the app -->
+<section class="view" id="v-receipt">
+  <div class="top street"><div class="in">ひだまり商店街 <small>お客さまの手元 ／ 昨日のレシートとスマホのアプリ</small></div></div>
+  <div class="split">
+    <div>
+      <div class="paper" id="paper"><div class="scanline"></div><div id="paper-in"></div></div>
+    </div>
+    <div class="slot" data-act="claim"></div>
+  </div>
+</section>
+
+<!-- 2. the bakery's daily review -->
+<section class="view" id="v-desk">
+  <div class="top shop"><div class="in">パン工房こむぎ　お店の端末 <small>レシート申請の確認（1日1回）</small></div></div>
+  <div class="page">
+    <div class="card">
+      <h1>レシートの申請</h1>
+      <p class="lead">アプリから届いた申請を、売上と照らして承認します。届くのはレシートの内容だけで、お客さまの名前や会員番号はありません。</p>
+      <table><thead><tr><th>状態</th><th>レシート番号</th><th>日時</th><th class="num">合計</th><th class="num">ポイント</th></tr></thead><tbody id="d-rows"></tbody></table>
+      <p style="margin:14px 0 0"><button class="btn" id="approve">売上と照らして承認する</button></p>
+      <div id="d-out"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. the café: a signed QR on the customer display -->
+<section class="view" id="v-kissa">
+  <div class="top kissa"><div class="in">喫茶ひだまり <small>レジのお客さま向け画面 ／ QRを表示できるお店</small></div></div>
+  <div class="split">
+    <div>
+      <div class="display">
+        <div class="sub">お会計</div>
+        <div class="amt">¥640　<span style="font-size:16px;font-weight:400">ブレンドとチーズケーキ</span></div>
+        <div id="k-qr"><p class="sub" style="margin-top:14px">会計が済むと、ポイントのQRを表示します。</p></div>
+        <button class="btn street" id="show-qr">会計する</button>
+      </div>
+      <p class="note" style="margin-top:10px">QRはお店の鍵で署名済みです。読み取られた申請は、お店の確認なしに次の同期で発行されます。</p>
+      <p><button class="btn gray" id="sync">お店の同期</button> <span class="note" id="k-out"></span></p>
+    </div>
+    <div class="slot" data-act="scan"></div>
+  </div>
+</section>
+
+<!-- 4. paying with points at the gift shop -->
+<section class="view" id="v-pay">
+  <div class="top tsumugi"><div class="in">雑貨つむぎ <small>レジ ／ ポイントでの支払い</small></div></div>
+  <div class="split">
+    <div>
+      <div class="card">
+        <h1>お会計　¥2,200</h1>
+        <p class="lead">手ぬぐい（ひだまり商店街限定）。お客さまが 20ポイントを使います。</p>
+        <div id="p-out"><p class="note">お客さまのアプリからの提示を待っています。</p></div>
+      </div>
+    </div>
+    <div class="slot" data-act="pay"></div>
+  </div>
+</section>
+
+<!-- 5. a copied app -->
+<section class="view" id="v-copy">
+  <div class="top kissa"><div class="in">喫茶ひだまり <small>レジ ／ ポイントでの支払い</small></div></div>
+  <div class="split">
+    <div>
+      <div class="card">
+        <h1>お会計　¥480</h1>
+        <p class="lead">アプリをコピーした人が、使い終わったはずの18ポイントを提示します。</p>
+        <div id="c-out"><p class="note">提示を待っています。</p></div>
+      </div>
+    </div>
+    <div class="slot" data-act="copy"></div>
+  </div>
+</section>
+
+<!-- 6. settlement -->
+<section class="view" id="v-settle">
+  <div class="top op"><div class="in">ひだまり商店街　運営 <small>月末の精算 ／ 各店が提出した記録から</small></div></div>
+  <div class="page">
+    <div class="card">
+      <h1>お店どうしの精算</h1>
+      <p class="lead">ポイントを発行したお店が支払い、受け取ったお店が受け取ります。</p>
+      <table><thead><tr><th>お店</th><th class="num">発行して使われた</th><th class="num">受け取った</th><th class="num">支払う</th><th class="num">受け取る</th></tr></thead><tbody id="s-rows"></tbody></table>
+      <div id="s-find"></div>
+    </div>
+    <div class="recs" id="s-recs"></div>
+  </div>
+</section>
+
+<div class="caption" id="cap"></div>
+<div class="cursor" id="cur"></div>
+<div class="bar">
+  <span class="tag">デモ操作</span><span>架空の商店街です</span>
+  <button data-go="receipt">お客さまの手元</button><button data-go="desk">こむぎの端末</button><button data-go="kissa">喫茶ひだまり</button><button data-go="pay">雑貨つむぎ</button><button data-go="copy">コピーしたアプリ</button><button data-go="settle">運営の精算</button>
+  <button class="hot" id="copycat">別の人が同じレシートで申請する</button><button id="reset">最初から</button>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const api = async (p, b) => (await fetch(p, b === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })).json();
+const yen = (n) => '¥' + n.toLocaleString();
+const when = (at) => at.slice(5, 10).replace('-', '/') + ' ' + at.slice(11, 16);
+let app = { balance: 0, held: [], pending: [] };
+let msg = null;
+
+const ACTS = { claim: 'レシートを読み取る', scan: 'QRを読み取る', pay: '20ポイント使う', copy: '18ポイント使う' };
+function phone(act) {
+  if (act === 'copy') {
+    return `<div class="phone copy"><div class="ph-top">ひだまりポイント<small>コピーしたアプリ（使い終わったポイントの控え）</small></div><div class="ph-body">
+      <div class="bal"><span>使えるはずのポイント</span><b>18</b><i>pt</i></div>
+      <ul class="items"><li><span>パン工房こむぎ<span class="sub">コピーした控え</span></span><b>18 pt</b></li></ul>
+      <div class="ph-msg ${msg ? 'on ' + msg[0] : ''}">${msg ? msg[1] : ''}</div>
+      <div class="ph-act"><button class="btn" id="act">${ACTS.copy}</button></div></div></div>`;
+  }
+  const items = app.held.map((h) => `<li><span>${esc(h.from)}${h.change ? '<span class="tagc">お釣り</span>' : ''}<span class="sub">期限 ${h.exp}</span></span><b>${h.value} pt</b></li>`)
+    .concat(app.pending.map((p) => `<li class="wait"><span>${esc(p.store)}<span class="sub">${p.status === 'authorized' ? 'お店の次の同期で届きます' : 'お店の確認待ち（1日1回）'}</span></span><b>+${p.value} pt</b></li>`)).join('');
+  return `<div class="phone"><div class="ph-top">ひだまりポイント<small>登録なし。ポイントはこのスマホの中だけ</small></div><div class="ph-body">
+    <div class="bal"><span>使えるポイント</span><b id="bal">${app.balance}</b><i>pt</i></div>
+    <div class="ph-msg ${msg ? 'on ' + msg[0] : ''}">${msg ? msg[1] : ''}</div>
+    <ul class="items">${items || '<li><span class="sub">まだポイントはありません</span></li>'}</ul>
+    <div class="ph-act"><button class="btn" id="act">${ACTS[act]}</button></div></div></div>`;
+}
+async function refresh() {
+  const r = await api('/api/app');
+  app = r;
+  if (r.got?.length && !msg) msg = ['ok', r.got.map((g) => `${g.value}ポイントが届きました`).join('、')];
+  document.querySelectorAll('.slot').forEach((x) => { x.innerHTML = ''; });
+  const slot = document.querySelector('.view.on .slot');
+  if (slot) { slot.innerHTML = phone(slot.dataset.act); slot.querySelector('#act').addEventListener('click', () => acts[slot.dataset.act]()); }
+}
+const acts = {
+  async claim() {
+    $('#paper').classList.add('scanning');
+    await new Promise((r) => setTimeout(r, 1500));
+    $('#paper').classList.remove('scanning');
+    const r = await api('/api/claim', {});
+    msg = r.status === 'pending' ? ['', `パン工房こむぎに申請しました。お店の確認のあとで、${r.value}ポイントが届きます。送ったのはレシートの内容と、この申請のためだけの新しい鍵です。`] : ['ng', 'このレシートは、すでに申請されています。'];
+    await refresh();
+  },
+  async scan() {
+    const r = await api('/api/scan', {});
+    msg = ['', `喫茶ひだまりの署名済みのQRです。お店の確認は要りません。${r.value}ポイントは、お店の次の同期で届きます。`];
+    await refresh();
+  },
+  async pay() {
+    const r = await api('/api/pay', { amount: 20 });
+    const parts = r.used.map((u) => `${esc(u.from)} ${u.value}`).join(' ＋ ');
+    const ch = r.used.find((u) => u.change);
+    $('#p-out').innerHTML = `<div class="alert ok"><b>20ポイントを受け取りました</b>${parts}${ch ? `。お釣りの ${ch.change}ポイントは、運営が発行してお客さまのアプリへ返しました。` : ''}</div><p class="note" style="margin-top:8px">お店が確かめたのは、商店街のお店の署名、お客さまのアプリの署名、有効期限だけ。誰が来たかは知りません。</p>`;
+    msg = ['ok', `20ポイント使いました。${ch ? `お釣りの ${ch.change}ポイントが届きました。` : ''}`];
+    await refresh();
+  },
+  async copy() {
+    const r = await api('/api/copy', {});
+    $('#c-out').innerHTML = r.ok ? '<div class="alert ok"><b>受け取りました</b></div>' : `<div class="alert ng"><b>受け取れません</b>${esc(r.error)}</div><p class="note" style="margin-top:8px">運営の照合サービスに、使われたポイントのダイジェストと受け取ったお店だけが記録されています。二重に使うことはできません。</p>`;
+    msg = r.ok ? null : ['ng', 'お店で断られました。'];
+    await refresh();
+  },
+};
+
+const views = {
+  async receipt() {
+    const r = await api('/api/receipt');
+    $('#paper-in').innerHTML = `<h3>パン工房こむぎ</h3><div class="c">ひだまり商店街</div><hr><div class="r"><span>${when(r.at)}</span><span>No. ${esc(r.number)}</span></div><hr>${r.lines.map(([n, q, p]) => `<div class="r"><span>${esc(n)} ×${q}</span><span>${yen(q * p)}</span></div>`).join('')}<hr><div class="r tot"><span>合計</span><span>${yen(r.total)}</span></div><div class="foot">ひだまりポイント 対象店<br>アプリでこのレシートを読み取ってください</div>`;
+  },
+  async desk() {
+    $('#d-out').innerHTML = '';
+    await deskRows();
+  },
+  async kissa() { $('#k-out').textContent = ''; },
+  async pay() {},
+  async copy() {},
+  async settle() {
+    const r = await api('/api/settle');
+    $('#s-rows').innerHTML = r.statements.map((s) => `<tr><td>${esc(s.name)}</td><td class="num">${s.issued}件</td><td class="num">${s.accepted}件</td><td class="num">${s.pays ? s.pays + ' pt' : '—'}</td><td class="num">${s.receives ? s.receives + ' pt' : '—'}</td></tr>`).join('');
+    $('#s-find').innerHTML = r.findings.length ? `<div class="alert ng"><b>指摘 ${r.findings.length}件</b></div>` : '<div class="alert ok"><b>指摘なし</b>どのポイントも一度だけ、発行したお店の署名どおりに使われています。</div>';
+    const ev = { program: '参加', issued: '発行', redeemed: '受け取り' };
+    $('#s-recs').innerHTML = r.records.map((c) => `<div class="card"><h2>${esc(c.store)}の記録</h2><ul>${c.events.map((e) => `<li>${ev[e.event] ?? e.event}<span class="mono">　${e.digest.slice(0, 16)}…</span></li>`).join('')}</ul></div>`).join('');
+  },
+};
+async function deskRows() {
+  const { claims } = await api('/api/desk');
+  const label = { pending: '確認待ち', duplicate: '重複', issued: '発行済み', rejected: '却下', authorized: '承認済み' };
+  $('#d-rows').innerHTML = claims.map((c) => `<tr class="${c.status === 'duplicate' ? 'dup' : ''}"><td><span class="st ${c.status}">${label[c.status]}</span>${c.status === 'duplicate' ? '<div class="note" style="color:#8a1c1c">同じレシートが先に申請されています</div>' : ''}</td><td>${esc(c.number)}</td><td>${when(c.at)}</td><td class="num">${yen(c.total)}</td><td class="num">${c.value} pt</td></tr>`).join('') || '<tr><td colspan="5" class="note">申請はありません</td></tr>';
+}
+async function go(name) {
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === 'v-' + name));
+  window.scrollTo(0, 0);
+  msg = null;
+  await views[name]?.();
+  await refresh();
+}
+document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+$('#reset').addEventListener('click', async () => { await api('/api/reset', {}); $('#p-out').innerHTML = '<p class="note">お客さまのアプリからの提示を待っています。</p>'; $('#c-out').innerHTML = '<p class="note">提示を待っています。</p>'; $('#k-qr').innerHTML = '<p class="sub" style="margin-top:14px">会計が済むと、ポイントのQRを表示します。</p>'; $('#show-qr').style.display = ''; go('receipt'); });
+$('#copycat').addEventListener('click', async () => { await api('/api/copycat', {}); if ($('#v-desk.on')) await deskRows(); });
+$('#approve').addEventListener('click', async () => {
+  const { answered } = await api('/api/desk/approve', {});
+  const n = answered.filter((a) => a.status === 'issued');
+  await deskRows();
+  $('#d-out').innerHTML = `<div class="alert ok"><b>${n.length}件を承認し、${n.reduce((s, a) => s + a.value, 0)}ポイントをお店の鍵で発行しました</b>先着の申請に発行したので、後から来た重複の申請は却下されました。</div>`;
+});
+$('#show-qr').addEventListener('click', async () => {
+  const r = await api('/api/kissa/qr', {});
+  $('#k-qr').innerHTML = `<div class="qrbox">${r.svg}</div><div class="sub">ひだまりポイント ${r.points}pt　アプリで読み取ってください（10分間有効）</div>`;
+  $('#show-qr').style.display = 'none';
+});
+$('#sync').addEventListener('click', async () => {
+  const { done } = await api('/api/kissa/sync', {});
+  $('#k-out').textContent = done.length ? `${done.length}件を発行しました` : '発行するものはありません';
+  msg = null;
+  await refresh();
+});
+// Keeps a result clear of the caption and the control bar.
+window.lift = (sel) => { const el = document.querySelector(sel); if (!el) return; const r = el.getBoundingClientRect(); const room = window.innerHeight - 190; if (r.bottom > room) window.scrollBy({ top: r.bottom - room, behavior: 'smooth' }); };
+window.caption = (t) => { const c = $('#cap'); if (!t) { c.classList.remove('on'); return; } c.innerHTML = t; c.classList.add('on'); };
+const cur = $('#cur');
+addEventListener('mousemove', (e) => { cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px'; });
+addEventListener('mousedown', () => cur.classList.add('press')); addEventListener('mouseup', () => cur.classList.remove('press'));
+go(location.hash.slice(1) || 'receipt');
+</script>
+</body>
+</html>

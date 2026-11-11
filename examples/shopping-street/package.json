@@ -1,0 +1,14 @@
+{
+  "name": "kangoh-example-shopping-street",
+  "private": true,
+  "description": "A fictional shopping street: points from receipts, a daily review, a QR at the café, change, a refused copy and the settlement.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "kangoh": "^0.4.2",
+    "qrcode": "^1.5.4"
+  }
+}

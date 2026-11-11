@@ -230,6 +230,14 @@ has not been changed.
 | `GET /receipts?from=DATE` | the store | Its claims; `Authorization: Store <token>` signed with its key |
 | `POST /receipts/ID/issue`, `/reject` | the store | Hand over the voucher, or refuse with a reason |
 
+## Example
+
+[examples/shopping-street](examples/shopping-street/) is a fictional
+shopping street, in Japanese: points from a receipt, the shop's daily
+review, a signed QR at the café, paying with change, a copied app refused
+at the counter, and the settlement.
+[A two-minute video](examples/shopping-street/demo.mp4) walks through it.
+
 ## Command line
 
 ```sh

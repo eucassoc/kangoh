@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>kangoh デモ</title>
+<style>
+body { margin:0; height:100vh; display:grid; place-items:center; background:#fff; font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif; color:#1d2433; }
+.c { text-align:center; } img { height:96px; } .rule { width:84px; height:4px; margin:22px auto; border-radius:2px; background:linear-gradient(90deg,#1b3a8c,#1f6fd6,#3fb6ea); }
+h1 { font-size:34px; line-height:1.45; margin:0 0 12px; font-weight:700; } p { margin:0; color:#5b6475; font-size:16px; line-height:1.8; }
+.tag { display:inline-block; margin-top:16px; font-size:13px; color:#5b6475; border:1px solid #dfe3ea; border-radius:999px; padding:2px 14px; }
+.foot { position:fixed; bottom:22px; left:0; right:0; text-align:center; font-size:12px; color:#9aa2b1; }
+</style></head>
+<body><div class="c"><img src="/logo.png" alt="kangoh"><div class="rule"></div><h1 id="h"></h1><p id="p"></p><div class="tag" id="t"></div></div><div class="foot">このデモに登場する商店街・お店はすべて架空です</div>
+<script>
+const q = new URLSearchParams(location.search);
+const cards = {
+  start: ['会員登録もカードもいらない、<br>商店街の共通ポイント', 'レシートでたまり、どのお店でも使える。誰も顧客台帳を持たない', 'kangoh（オープンソース）'],
+  end: ['お客さまの情報を持たずに、<br>お店どうしで精算できる', 'ポイントはお客さまのスマホの中に。発行したお店が支払い、<br>受け取ったお店が受け取る', 'kangoh.com'],
+};
+const [h, p, t] = cards[q.get('card') ?? 'start'];
+document.getElementById('h').innerHTML = h; document.getElementById('p').innerHTML = p; document.getElementById('t').textContent = t;
+</script></body></html>

@@ -213,6 +213,13 @@ KANGOH_DESK_SECRET=... kangoh registry -p program.json --state receipts.jsonl --
 | `GET /receipts?from=DATE` | 店舗 | 自店の申請。店舗の鍵で署名した `Authorization: Store <token>` |
 | `POST /receipts/ID/issue`、`/reject` | 店舗 | バウチャーを渡す、または理由を付けて断る |
 
+## 例
+
+[examples/shopping-street](examples/shopping-street/) は架空の商店街のデモです。
+レシートからのポイント、お店の1日1回の確認、喫茶店の署名付きQR、お釣りの出る支払い、
+その場で断られるコピーしたアプリ、精算までを見られます。
+流れは[約2分の動画](examples/shopping-street/demo.mp4)で見られます。
+
 ## コマンドライン
 
 ```sh
